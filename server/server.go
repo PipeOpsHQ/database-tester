@@ -25,6 +25,35 @@ type Server struct {
 	router           *mux.Router
 }
 
+// writeJSONResponse safely writes a JSON response with proper error handling
+func (s *Server) writeJSONResponse(w http.ResponseWriter, statusCode int, data interface{}) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+
+	if err := json.NewEncoder(w).Encode(data); err != nil {
+		log.Printf("Error encoding JSON response: %v", err)
+		// Try to send a basic error response
+		w.WriteHeader(http.StatusInternalServerError)
+		fmt.Fprintf(w, `{"error":"Failed to encode response","type":"encode_error"}`)
+	}
+}
+
+// writeJSONError safely writes a JSON error response
+func (s *Server) writeJSONError(w http.ResponseWriter, statusCode int, message string, errorType string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(statusCode)
+
+	errorResponse := map[string]string{
+		"error": message,
+		"type":  errorType,
+	}
+
+	if err := json.NewEncoder(w).Encode(errorResponse); err != nil {
+		log.Printf("Error encoding JSON error response: %v", err)
+		fmt.Fprintf(w, `{"error":"Failed to encode error response","type":"encode_error"}`)
+	}
+}
+
 // NewServer creates a new server instance
 func NewServer(cfg *config.DatabaseConfig) *Server {
 	connectorManager := connectors.NewConnectorManager(cfg)
@@ -101,6 +130,8 @@ func (s *Server) Stop() {
 
 // healthHandler returns server health status
 func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	status := map[string]interface{}{
 		"status":    "healthy",
 		"timestamp": time.Now().Format(time.RFC3339),
@@ -108,12 +139,17 @@ func (s *Server) healthHandler(w http.ResponseWriter, r *http.Request) {
 		"databases": s.stressTester.GetConnectionStatus(),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		log.Printf("Error encoding health response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to encode response"})
+	}
 }
 
 // statusHandler returns connection status for all databases
 func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	connectionStatus := s.stressTester.GetConnectionStatus()
 	connectivityTest := s.stressTester.RunQuickConnectivityTest()
 
@@ -125,12 +161,22 @@ func (s *Server) statusHandler(w http.ResponseWriter, r *http.Request) {
 		"connected_count":   s.countConnected(connectionStatus),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(status)
+	if err := json.NewEncoder(w).Encode(status); err != nil {
+		log.Printf("Error encoding status response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to encode response"})
+	}
 }
 
 // connectHandler attempts to connect to all databases
 func (s *Server) connectHandler(w http.ResponseWriter, r *http.Request) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Panic in connectHandler: %v", r)
+			s.writeJSONError(w, http.StatusInternalServerError, "Internal server error occurred", "panic")
+		}
+	}()
+
 	log.Println("Attempting to connect to all databases...")
 	s.connectorManager.ConnectAll()
 
@@ -140,14 +186,16 @@ func (s *Server) connectHandler(w http.ResponseWriter, r *http.Request) {
 		"connection_status": connectionStatus,
 		"connected_count":   s.countConnected(connectionStatus),
 		"timestamp":         time.Now().Format(time.RFC3339),
+		"success":           true,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	s.writeJSONResponse(w, http.StatusOK, response)
 }
 
 // disconnectHandler disconnects from all databases
 func (s *Server) disconnectHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	log.Println("Disconnecting from all databases...")
 	s.connectorManager.DisconnectAll()
 
@@ -156,12 +204,17 @@ func (s *Server) disconnectHandler(w http.ResponseWriter, r *http.Request) {
 		"timestamp": time.Now().Format(time.RFC3339),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding disconnect response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to encode response"})
+	}
 }
 
 // runStressTestHandler runs stress tests on all connected databases
 func (s *Server) runStressTestHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	// Parse test configuration from request
 	testConfig := s.parseTestConfig(r)
 
@@ -183,12 +236,17 @@ func (s *Server) runStressTestHandler(w http.ResponseWriter, r *http.Request) {
 		"total_tests": len(results),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding stress test response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to encode response"})
+	}
 }
 
 // runSingleTestHandler runs stress test on a specific database
 func (s *Server) runSingleTestHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	vars := mux.Vars(r)
 	dbName := vars["database"]
 
@@ -198,7 +256,11 @@ func (s *Server) runSingleTestHandler(w http.ResponseWriter, r *http.Request) {
 
 	result, err := s.stressTester.RunCustomTest(dbName, testConfig)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to run test: %v", err), http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":    fmt.Sprintf("Failed to run test: %v", err),
+			"database": dbName,
+		})
 		return
 	}
 
@@ -210,12 +272,17 @@ func (s *Server) runSingleTestHandler(w http.ResponseWriter, r *http.Request) {
 		"timestamp": time.Now().Format(time.RFC3339),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding single test response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to encode response"})
+	}
 }
 
 // benchmarkHandler runs a custom benchmark
 func (s *Server) benchmarkHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	var benchmarkRequest struct {
 		Database   string `json:"database"`
 		Query      string `json:"query"`
@@ -223,7 +290,8 @@ func (s *Server) benchmarkHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&benchmarkRequest); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request body"})
 		return
 	}
 
@@ -240,7 +308,11 @@ func (s *Server) benchmarkHandler(w http.ResponseWriter, r *http.Request) {
 		benchmarkRequest.Iterations,
 	)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Benchmark failed: %v", err), http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{
+			"error":    fmt.Sprintf("Benchmark failed: %v", err),
+			"database": benchmarkRequest.Database,
+		})
 		return
 	}
 
@@ -253,12 +325,17 @@ func (s *Server) benchmarkHandler(w http.ResponseWriter, r *http.Request) {
 		"timestamp":  time.Now().Format(time.RFC3339),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding benchmark response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to encode response"})
+	}
 }
 
 // getResultsHandler returns the latest test results
 func (s *Server) getResultsHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	results := s.stressTester.GetResults()
 	connectionStatus := s.stressTester.GetConnectionStatus()
 
@@ -269,12 +346,17 @@ func (s *Server) getResultsHandler(w http.ResponseWriter, r *http.Request) {
 		"total_results":     len(results),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding results response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to encode response"})
+	}
 }
 
 // getConfigHandler returns current database configuration
 func (s *Server) getConfigHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
 	currentConfig := s.config.GetDatabaseConfig()
 
 	// Mask passwords for security
@@ -286,22 +368,53 @@ func (s *Server) getConfigHandler(w http.ResponseWriter, r *http.Request) {
 		"timestamp": time.Now().Format(time.RFC3339),
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding config response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "Failed to encode response"})
+	}
 }
 
 // updateConfigHandler updates database configuration
 func (s *Server) updateConfigHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Ensure we always return JSON, even in case of panics
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Panic in updateConfigHandler: %v", r)
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "Internal server error occurred",
+				"type":  "panic",
+			})
+		}
+	}()
+
 	var updateRequest config.DynamicDatabaseConfig
 
 	if err := json.NewDecoder(r.Body).Decode(&updateRequest); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		log.Printf("Error decoding request body: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		if encodeErr := json.NewEncoder(w).Encode(map[string]string{
+			"error": "Invalid request body",
+			"type":  "decode_error",
+		}); encodeErr != nil {
+			log.Printf("Failed to encode error response: %v", encodeErr)
+		}
 		return
 	}
 
 	// Update the global configuration
 	if err := s.config.UpdateDatabaseConfig(updateRequest); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to update global configuration: %v", err), http.StatusInternalServerError)
+		log.Printf("Error updating global configuration: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		if encodeErr := json.NewEncoder(w).Encode(map[string]string{
+			"error": fmt.Sprintf("Failed to update global configuration: %v", err),
+			"type":  "config_error",
+		}); encodeErr != nil {
+			log.Printf("Failed to encode error response: %v", encodeErr)
+		}
 		return
 	}
 
@@ -322,21 +435,53 @@ func (s *Server) updateConfigHandler(w http.ResponseWriter, r *http.Request) {
 		"message":   "Database configuration updated successfully",
 		"timestamp": time.Now().Format(time.RFC3339),
 		"updated":   true,
+		"success":   true,
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	w.WriteHeader(http.StatusOK)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding config update response: %v", err)
+		// If we can't encode the success response, try to send an error response
+		w.WriteHeader(http.StatusInternalServerError)
+		if encodeErr := json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to encode response",
+			"type":  "encode_error",
+		}); encodeErr != nil {
+			log.Printf("Failed to encode error response: %v", encodeErr)
+		}
+	}
 }
 
 // testConfigHandler tests a database configuration before applying
 func (s *Server) testConfigHandler(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+
+	// Ensure we always return JSON, even in case of panics
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Panic in testConfigHandler: %v", r)
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error": "Internal server error occurred",
+				"type":  "panic",
+			})
+		}
+	}()
+
 	var testRequest struct {
 		Database string      `json:"database"`
 		Config   interface{} `json:"config"`
 	}
 
 	if err := json.NewDecoder(r.Body).Decode(&testRequest); err != nil {
-		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		log.Printf("Error decoding test config request: %v", err)
+		w.WriteHeader(http.StatusBadRequest)
+		if encodeErr := json.NewEncoder(w).Encode(map[string]string{
+			"error": "Invalid request body",
+			"type":  "decode_error",
+		}); encodeErr != nil {
+			log.Printf("Failed to encode error response: %v", encodeErr)
+		}
 		return
 	}
 
@@ -349,16 +494,27 @@ func (s *Server) testConfigHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil {
+		log.Printf("Database connection test failed for %s: %v", testRequest.Database, err)
 		response["success"] = false
 		response["message"] = fmt.Sprintf("Connection test failed: %v", err)
 		response["error"] = err.Error()
+		w.WriteHeader(http.StatusOK) // Still return 200 with success: false
 	} else {
 		response["success"] = true
 		response["message"] = "Connection test successful"
+		w.WriteHeader(http.StatusOK)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(response)
+	if err := json.NewEncoder(w).Encode(response); err != nil {
+		log.Printf("Error encoding test config response: %v", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		if encodeErr := json.NewEncoder(w).Encode(map[string]string{
+			"error": "Failed to encode response",
+			"type":  "encode_error",
+		}); encodeErr != nil {
+			log.Printf("Failed to encode error response: %v", encodeErr)
+		}
+	}
 }
 
 // maskPasswords masks sensitive information in configuration
@@ -1022,7 +1178,19 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                     })
                 });
 
-                const data = await response.json();
+                let data;
+                const contentType = response.headers.get('content-type');
+
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        data = await response.json();
+                    } catch (jsonError) {
+                        throw new Error('Invalid JSON response from server');
+                    }
+                } else {
+                    const text = await response.text();
+                    throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
+                }
 
                 if (data.success) {
                     showMessage(database.toUpperCase() + ' connection test successful!', 'success');
@@ -1061,13 +1229,26 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                     body: JSON.stringify(updateData)
                 });
 
-                const data = await response.json();
+                let data;
+                const contentType = response.headers.get('content-type');
+
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        data = await response.json();
+                    } catch (jsonError) {
+                        throw new Error('Invalid JSON response from server');
+                    }
+                } else {
+                    const text = await response.text();
+                    throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
+                }
 
                 if (response.ok) {
                     showMessage(database.toUpperCase() + ' configuration saved successfully!', 'success');
                     await updateConnectionStatuses();
                 } else {
-                    showMessage('Failed to save ' + database + ' configuration: ' + data.message, 'error');
+                    const errorMsg = data.error || data.message || 'Unknown error occurred';
+                    showMessage('Failed to save ' + database + ' configuration: ' + errorMsg, 'error');
                 }
             } catch (error) {
                 showMessage('Save error: ' + error.message, 'error');
@@ -1096,8 +1277,22 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                     showMessage('All database configurations saved successfully!', 'success');
                     await updateConnectionStatuses();
                 } else {
-                    const data = await response.json();
-                    showMessage('Failed to save configurations: ' + data.message, 'error');
+                    let data;
+                    const contentType = response.headers.get('content-type');
+
+                    if (contentType && contentType.includes('application/json')) {
+                        try {
+                            data = await response.json();
+                        } catch (jsonError) {
+                            throw new Error('Invalid JSON response from server');
+                        }
+                    } else {
+                        const text = await response.text();
+                        throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
+                    }
+
+                    const errorMsg = data.error || data.message || 'Unknown error occurred';
+                    showMessage('Failed to save configurations: ' + errorMsg, 'error');
                 }
             } catch (error) {
                 showMessage('Save error: ' + error.message, 'error');
@@ -1124,7 +1319,19 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                         })
                     });
 
-                    const data = await response.json();
+                    let data;
+                    const contentType = response.headers.get('content-type');
+
+                    if (contentType && contentType.includes('application/json')) {
+                        try {
+                            data = await response.json();
+                        } catch (jsonError) {
+                            throw new Error('Invalid JSON response from server');
+                        }
+                    } else {
+                        const text = await response.text();
+                        throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
+                    }
                     results.push({
                         database: db,
                         success: data.success,
@@ -1158,7 +1365,20 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
             try {
                 showLoading(true);
                 const response = await fetch('/api/connect', { method: 'POST' });
-                const data = await response.json();
+
+                let data;
+                const contentType = response.headers.get('content-type');
+
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        data = await response.json();
+                    } catch (jsonError) {
+                        throw new Error('Invalid JSON response from server');
+                    }
+                } else {
+                    const text = await response.text();
+                    throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
+                }
 
                 showMessage('Database connection attempt completed. Check individual statuses.', 'info');
                 await updateConnectionStatuses();
@@ -1188,7 +1408,19 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                     })
                 });
 
-                const data = await response.json();
+                let data;
+                const contentType = response.headers.get('content-type');
+
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        data = await response.json();
+                    } catch (jsonError) {
+                        throw new Error('Invalid JSON response from server');
+                    }
+                } else {
+                    const text = await response.text();
+                    throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
+                }
                 showMessage('Stress test completed! View the report to see results.', 'success');
             } catch (error) {
                 showMessage('Stress test error: ' + error.message, 'error');
