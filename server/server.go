@@ -834,25 +834,22 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                     <div class="card-title collapsible" onclick="toggleCard('mongodb')">
                         🍃 MongoDB Database
                     </div>
-                    <div class="status-indicator status-disconnected" id="mongodb-status">Disabled</div>
+                    <div class="status-indicator status-unknown" id="mongodb-status">Unknown</div>
                 </div>
-                <div class="collapsible-content collapsed" id="mongodb-content">
-                    <div class="message info" style="display: block;">
-                        MongoDB connector is temporarily disabled due to dependency issues. Will be re-enabled in a future update.
-                    </div>
+                <div class="collapsible-content" id="mongodb-content">
                     <form id="mongodb-form">
                         <div class="form-group">
                             <label class="form-label">Connection URI</label>
-                            <input type="text" class="form-input" name="uri" placeholder="mongodb://localhost:27017" disabled>
+                            <input type="text" class="form-input" name="uri" placeholder="mongodb://localhost:27017" required>
                         </div>
                         <div class="form-group">
                             <label class="form-label">Database Name</label>
-                            <input type="text" class="form-input" name="database" placeholder="testdb" disabled>
+                            <input type="text" class="form-input" name="database" placeholder="testdb" required>
                         </div>
                     </form>
                     <div class="card-actions">
-                        <button disabled class="btn btn-secondary btn-small">🔍 Test Connection (Disabled)</button>
-                        <button disabled class="btn btn-secondary btn-small">💾 Save Config (Disabled)</button>
+                        <button onclick="testConnection('mongodb')" class="btn btn-warning btn-small">🔍 Test Connection</button>
+                        <button onclick="saveConfig('mongodb')" class="btn btn-success btn-small">💾 Save Config</button>
                     </div>
                 </div>
             </div>
@@ -964,6 +961,13 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                 form.database.value = config.mssql.database || '';
                 // Don't populate password for security
             }
+
+            // Populate MongoDB form
+            if (config.mongodb) {
+                const form = document.getElementById('mongodb-form');
+                form.uri.value = config.mongodb.uri || '';
+                form.database.value = config.mongodb.database || '';
+            }
         }
 
         async function updateConnectionStatuses() {
@@ -1072,7 +1076,7 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
         }
 
         async function saveAllConfigs() {
-            const databases = ['mysql', 'postgresql', 'redis', 'mssql'];
+            const databases = ['mysql', 'postgresql', 'redis', 'mssql', 'mongodb'];
             const updateData = {};
 
             databases.forEach(db => {
@@ -1102,7 +1106,7 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
         }
 
         async function testAllConnections() {
-            const databases = ['mysql', 'postgresql', 'redis', 'mssql'];
+            const databases = ['mysql', 'postgresql', 'redis', 'mssql', 'mongodb'];
             let results = [];
 
             showLoading(true);
