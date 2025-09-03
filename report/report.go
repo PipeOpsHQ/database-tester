@@ -38,8 +38,24 @@ type ReportGenerator struct {
 
 // NewReportGenerator creates a new report generator
 func NewReportGenerator() *ReportGenerator {
+	funcMap := template.FuncMap{
+		"FormatDuration":      FormatDuration,
+		"GetStatusClass":      GetStatusClass,
+		"GetPerformanceClass": GetPerformanceClass,
+		"GetErrorRateClass":   GetErrorRateClass,
+		"sub":                 func(a, b float64) float64 { return a - b },
+		"add":                 func(a, b int64) int64 { return a + b },
+		"mul":                 func(a, b int64) int64 { return a * b },
+		"div": func(a, b int64) int64 {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+	}
+
 	return &ReportGenerator{
-		template: template.Must(template.New("report").Parse(htmlTemplate)),
+		template: template.Must(template.New("report").Funcs(funcMap).Parse(htmlTemplate)),
 	}
 }
 
@@ -596,22 +612,3 @@ const htmlTemplate = `
 </body>
 </html>
 `
-
-func init() {
-	// Register custom template functions
-	template.Must(template.New("report").Funcs(template.FuncMap{
-		"FormatDuration":      FormatDuration,
-		"GetStatusClass":      GetStatusClass,
-		"GetPerformanceClass": GetPerformanceClass,
-		"GetErrorRateClass":   GetErrorRateClass,
-		"sub":                 func(a, b float64) float64 { return a - b },
-		"add":                 func(a, b int64) int64 { return a + b },
-		"mul":                 func(a, b int64) int64 { return a * b },
-		"div": func(a, b int64) int64 {
-			if b == 0 {
-				return 0
-			}
-			return a / b
-		},
-	}).Parse(htmlTemplate))
-}
