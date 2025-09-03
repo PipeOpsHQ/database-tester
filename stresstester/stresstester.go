@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"math/rand"
+	"strings"
 	"sync"
 	"time"
 
@@ -149,6 +151,11 @@ func (st *StressTester) RunStressTest() map[string]*TestResult {
 func (st *StressTester) runSingleDatabaseTest(dbName string, connector connectors.DatabaseConnector) *TestResult {
 	log.Printf("Starting stress test for %s", dbName)
 
+	// Initialize stress test tables
+	if err := st.initializeStressTables(connector); err != nil {
+		log.Printf("Warning: Could not initialize tables for %s: %v", dbName, err)
+	}
+
 	result := &TestResult{
 		DatabaseName: dbName,
 		StartTime:    time.Now(),
@@ -243,99 +250,463 @@ func (st *StressTester) executeHeavyReadOperation(connector connectors.DatabaseC
 
 // executeHeavyWriteOperation executes intensive write operations
 func (st *StressTester) executeHeavyWriteOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
-	operations := []string{
-		fmt.Sprintf("INSERT INTO users (username, email, age, created_at) VALUES ('stress_user_%d', 'stress_%d@test.com', %d, NOW())",
-			st.getRandomIndex(100000), st.getRandomIndex(100000), 20+st.getRandomIndex(50)),
-		fmt.Sprintf("UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = %d", st.getRandomIndex(1000)+1),
-		fmt.Sprintf("DELETE FROM temp_data WHERE created_at < DATE_SUB(NOW(), INTERVAL %d HOUR)", st.getRandomIndex(24)+1),
+	var operations []string
+
+	switch connector.(type) {
+	case *connectors.MySQLConnector:
+		operations = []string{
+			// Bulk insert with multiple rows
+			fmt.Sprintf(`INSERT INTO stress_test_%d (id, data, timestamp) VALUES
+				(%d, 'data_%d', NOW()), (%d, 'data_%d', NOW()),
+				(%d, 'data_%d', NOW()), (%d, 'data_%d', NOW()),
+				(%d, 'data_%d', NOW()), (%d, 'data_%d', NOW()),
+				(%d, 'data_%d', NOW()), (%d, 'data_%d', NOW()),
+				(%d, 'data_%d', NOW()), (%d, 'data_%d', NOW())`,
+				st.getRandomIndex(10),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000)),
+			// Mass update with subquery
+			fmt.Sprintf(`UPDATE stress_test_%d SET data = CONCAT('updated_', RAND() * 100000),
+				timestamp = NOW() WHERE id IN (SELECT * FROM (SELECT id FROM stress_test_%d
+				ORDER BY RAND() LIMIT 100) AS tmp)`, st.getRandomIndex(10), st.getRandomIndex(10)),
+			// Create temporary table and populate
+			fmt.Sprintf(`CREATE TEMPORARY TABLE IF NOT EXISTS temp_heavy_%d
+				(id INT AUTO_INCREMENT PRIMARY KEY, data VARCHAR(255), ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+				st.getRandomIndex(10000)),
+		}
+	case *connectors.PostgreSQLConnector:
+		operations = []string{
+			// PostgreSQL bulk insert with generate_series
+			fmt.Sprintf(`INSERT INTO stress_test_%d (id, data, timestamp)
+				SELECT generate_series(%d, %d),
+				'bulk_data_' || (random() * 100000)::int,
+				NOW() + (random() * interval '30 days')`,
+				st.getRandomIndex(10), st.getRandomIndex(1000), st.getRandomIndex(1000)+100),
+			// Mass update with CTEs
+			fmt.Sprintf(`WITH updates AS (
+				SELECT id, 'heavy_update_' || (random() * 100000)::int as new_data
+				FROM stress_test_%d TABLESAMPLE SYSTEM(10)
+			) UPDATE stress_test_%d SET data = updates.new_data
+			FROM updates WHERE stress_test_%d.id = updates.id`,
+				st.getRandomIndex(10), st.getRandomIndex(10), st.getRandomIndex(10)),
+			// Upsert with conflict handling
+			fmt.Sprintf(`INSERT INTO stress_test_%d (id, data) VALUES (%d, 'conflict_%d')
+				ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data || '_updated',
+				update_count = stress_test_%d.update_count + 1`,
+				st.getRandomIndex(10), st.getRandomIndex(10000), st.getRandomIndex(10000), st.getRandomIndex(10)),
+		}
+	case *connectors.MSSQLConnector:
+		operations = []string{
+			// MSSQL bulk insert using VALUES constructor
+			fmt.Sprintf(`INSERT INTO stress_test_%d (id, data, timestamp) VALUES
+				(%d, 'bulk_%d', GETDATE()), (%d, 'bulk_%d', GETDATE()),
+				(%d, 'bulk_%d', GETDATE()), (%d, 'bulk_%d', GETDATE()),
+				(%d, 'bulk_%d', GETDATE()), (%d, 'bulk_%d', GETDATE())`,
+				st.getRandomIndex(10),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000),
+				st.getRandomIndex(100000), st.getRandomIndex(100000)),
+			// MERGE statement for upsert
+			fmt.Sprintf(`MERGE stress_test_%d AS target
+				USING (SELECT %d as id, 'merge_data_%d' as data) AS source
+				ON target.id = source.id
+				WHEN MATCHED THEN UPDATE SET data = source.data
+				WHEN NOT MATCHED THEN INSERT (id, data) VALUES (source.id, source.data);`,
+				st.getRandomIndex(10), st.getRandomIndex(10000), st.getRandomIndex(10000)),
+			// Batch delete and recreate
+			fmt.Sprintf(`DELETE TOP(1000) FROM stress_test_%d WHERE id %% 3 = 0`,
+				st.getRandomIndex(10)),
+		}
+	default:
+		// Fallback to simple operations
+		operations = []string{
+			fmt.Sprintf("INSERT INTO test_table VALUES (%d, 'data_%d')",
+				st.getRandomIndex(100000), st.getRandomIndex(100000)),
+		}
 	}
 
-	if st.config.RandomizeQueries {
-		operation := operations[st.getRandomIndex(len(operations))]
-		return connector.ExecuteQuery(operation)
+	var query string
+	if st.config.RandomizeQueries && len(operations) > 1 {
+		query = operations[st.getRandomIndex(len(operations))]
+	} else {
+		query = operations[0]
 	}
-	return connector.ExecuteQuery(operations[0])
+
+	return connector.ExecuteQuery(query)
 }
 
 // executeMixedOperation executes mixed read/write operations based on ratio
 func (st *StressTester) executeMixedOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
-	// Generate random number to determine operation type based on ratio
 	rand := st.getRandomIndex(100)
 
+	// In burst mode, execute multiple operations rapidly
+	if st.config.BurstMode {
+		// Execute 3-5 operations in quick succession
+		numOps := 3 + st.getRandomIndex(3)
+		var lastResult *connectors.QueryResult
+		var lastErr error
+
+		for i := 0; i < numOps; i++ {
+			opRand := st.getRandomIndex(100)
+			if opRand < st.config.MixedRatio.ReadPercent {
+				lastResult, lastErr = st.executeHeavyReadOperation(connector)
+			} else if opRand < st.config.MixedRatio.ReadPercent+st.config.MixedRatio.WritePercent {
+				lastResult, lastErr = st.executeHeavyWriteOperation(connector)
+			} else {
+				lastResult, lastErr = st.executeTransactionOperation(connector)
+			}
+
+			if lastErr != nil {
+				return lastResult, lastErr
+			}
+		}
+		return lastResult, lastErr
+	}
+
+	// Normal mixed operation mode
 	if rand < st.config.MixedRatio.ReadPercent {
+		// Execute heavy read operation
 		return st.executeHeavyReadOperation(connector)
 	} else if rand < st.config.MixedRatio.ReadPercent+st.config.MixedRatio.WritePercent {
+		// Execute heavy write operation
 		return st.executeHeavyWriteOperation(connector)
 	} else {
+		// Execute transaction
 		return st.executeTransactionOperation(connector)
 	}
 }
 
 // executeTransactionOperation executes transaction-based operations
 func (st *StressTester) executeTransactionOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
-	// Simulate complex transaction
-	userID := st.getRandomIndex(1000) + 1
-	amount := float64(st.getRandomIndex(50000)) / 100.0
+	var transaction string
 
-	transaction := fmt.Sprintf(`
-		START TRANSACTION;
-		INSERT INTO orders (user_id, total_amount, status, order_date) VALUES (%d, %.2f, 'pending', NOW());
-		UPDATE users SET total_spent = total_spent + %.2f WHERE id = %d;
-		INSERT INTO audit_log (user_id, action, amount, timestamp) VALUES (%d, 'order_created', %.2f, NOW());
-		COMMIT;
-	`, userID, amount, amount, userID, userID, amount)
+	switch connector.(type) {
+	case *connectors.MySQLConnector:
+		// MySQL complex transaction with multiple tables
+		transaction = fmt.Sprintf(`
+			START TRANSACTION;
+			SET @test_id = %d;
+			SET @test_val = RAND() * 10000;
+
+			CREATE TEMPORARY TABLE IF NOT EXISTS trans_temp_%d (
+				id INT PRIMARY KEY,
+				value DECIMAL(10,2),
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
+
+			INSERT INTO trans_temp_%d VALUES
+				(@test_id, @test_val, NOW()),
+				(@test_id + 1, @test_val * 1.1, NOW()),
+				(@test_id + 2, @test_val * 1.2, NOW()),
+				(@test_id + 3, @test_val * 1.3, NOW()),
+				(@test_id + 4, @test_val * 1.4, NOW());
+
+			UPDATE trans_temp_%d SET value = value * 1.05 WHERE id %% 2 = 0;
+
+			DELETE FROM trans_temp_%d WHERE value < @test_val * 1.1;
+
+			INSERT INTO trans_temp_%d
+			SELECT id + 1000, value * 2, NOW() FROM trans_temp_%d WHERE id < @test_id + 2;
+
+			COMMIT;`,
+			st.getRandomIndex(100000), st.getRandomIndex(1000),
+			st.getRandomIndex(1000), st.getRandomIndex(1000),
+			st.getRandomIndex(1000), st.getRandomIndex(1000),
+			st.getRandomIndex(1000))
+
+	case *connectors.PostgreSQLConnector:
+		// PostgreSQL transaction with CTEs and advanced features
+		transaction = fmt.Sprintf(`
+			BEGIN;
+
+			WITH test_data AS (
+				SELECT generate_series(1, 10) as id,
+				       random() * 10000 as value,
+				       NOW() + (random() * interval '30 days') as ts
+			),
+			inserted AS (
+				INSERT INTO stress_trans_%d (id, value, timestamp)
+				SELECT id + %d, value, ts FROM test_data
+				RETURNING id, value
+			),
+			updated AS (
+				UPDATE stress_trans_%d
+				SET value = value * 1.1,
+				    update_count = COALESCE(update_count, 0) + 1
+				WHERE id IN (SELECT id FROM inserted WHERE value > 5000)
+				RETURNING id, value
+			)
+			SELECT COUNT(*) as inserts,
+			       (SELECT COUNT(*) FROM updated) as updates,
+			       AVG(value) as avg_value
+			FROM inserted;
+
+			COMMIT;`,
+			st.getRandomIndex(100), st.getRandomIndex(10000), st.getRandomIndex(100))
+
+	case *connectors.MSSQLConnector:
+		// MSSQL transaction with table variables and MERGE
+		transaction = fmt.Sprintf(`
+			BEGIN TRANSACTION;
+
+			DECLARE @TestTable TABLE (
+				id INT,
+				value DECIMAL(10,2),
+				status VARCHAR(20)
+			);
+
+			INSERT INTO @TestTable (id, value, status)
+			SELECT TOP 10
+				ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) + %d,
+				RAND(CHECKSUM(NEWID())) * 10000,
+				CASE WHEN RAND() > 0.5 THEN 'active' ELSE 'pending' END
+			FROM sys.objects;
+
+			MERGE stress_trans_%d AS target
+			USING @TestTable AS source ON target.id = source.id
+			WHEN MATCHED AND source.value > target.value THEN
+				UPDATE SET value = source.value, status = source.status
+			WHEN NOT MATCHED THEN
+				INSERT (id, value, status) VALUES (source.id, source.value, source.status);
+
+			DELETE FROM stress_trans_%d
+			WHERE id IN (SELECT id FROM @TestTable WHERE status = 'pending' AND value < 5000);
+
+			COMMIT TRANSACTION;`,
+			st.getRandomIndex(100000), st.getRandomIndex(100), st.getRandomIndex(100))
+
+	default:
+		// Fallback simple transaction
+		transaction = "SELECT 1"
+	}
 
 	return connector.ExecuteQuery(transaction)
 }
 
 // executeBulkOperation executes bulk insert/update operations
 func (st *StressTester) executeBulkOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
-	// Generate bulk insert
-	values := make([]string, 10)
-	for i := 0; i < 10; i++ {
-		values[i] = fmt.Sprintf("('bulk_user_%d_%d', 'bulk_%d_%d@test.com', %d, NOW())",
-			st.getRandomIndex(10000), i, st.getRandomIndex(10000), i, 20+st.getRandomIndex(50))
+	var bulkOp string
+	batchSize := 50 // Increase batch size for heavy load
+
+	switch connector.(type) {
+	case *connectors.MySQLConnector:
+		// MySQL bulk insert with ON DUPLICATE KEY UPDATE
+		values := make([]string, batchSize)
+		for i := 0; i < batchSize; i++ {
+			values[i] = fmt.Sprintf("(%d, 'bulk_%d', %.2f, NOW())",
+				st.getRandomIndex(100000), st.getRandomIndex(100000), rand.Float64()*10000)
+		}
+		bulkOp = fmt.Sprintf(`INSERT INTO bulk_test_%d (id, data, value, timestamp) VALUES %s
+			ON DUPLICATE KEY UPDATE
+			value = VALUES(value) * 1.1,
+			update_count = COALESCE(update_count, 0) + 1,
+			timestamp = NOW()`,
+			st.getRandomIndex(10), strings.Join(values, ", "))
+
+	case *connectors.PostgreSQLConnector:
+		// PostgreSQL bulk operations with COPY-like syntax
+		bulkOp = fmt.Sprintf(`INSERT INTO bulk_test_%d (id, data, value, timestamp)
+			SELECT
+				generate_series(%d, %d),
+				'bulk_' || (random() * 100000)::int,
+				random() * 10000,
+				NOW() + (random() * interval '30 days')
+			ON CONFLICT (id) DO UPDATE SET
+				value = EXCLUDED.value * 1.1,
+				update_count = COALESCE(bulk_test_%d.update_count, 0) + 1`,
+			st.getRandomIndex(10),
+			st.getRandomIndex(10000), st.getRandomIndex(10000)+batchSize,
+			st.getRandomIndex(10))
+
+	case *connectors.MSSQLConnector:
+		// MSSQL bulk operations with table-valued constructor
+		values := make([]string, batchSize)
+		for i := 0; i < batchSize; i++ {
+			values[i] = fmt.Sprintf("(%d, 'bulk_%d', %.2f, GETDATE())",
+				st.getRandomIndex(100000), st.getRandomIndex(100000), rand.Float64()*10000)
+		}
+		bulkOp = fmt.Sprintf(`
+			MERGE bulk_test_%d AS target
+			USING (VALUES %s) AS source (id, data, value, timestamp)
+			ON target.id = source.id
+			WHEN MATCHED THEN UPDATE SET
+				data = source.data,
+				value = source.value * 1.1,
+				timestamp = source.timestamp
+			WHEN NOT MATCHED THEN INSERT (id, data, value, timestamp)
+				VALUES (source.id, source.data, source.value, source.timestamp);`,
+			st.getRandomIndex(10), strings.Join(values, ", "))
+
+	default:
+		// Fallback simple bulk insert
+		bulkOp = fmt.Sprintf("INSERT INTO test_table VALUES (%d, 'data_%d')",
+			st.getRandomIndex(100000), st.getRandomIndex(100000))
 	}
 
-	bulkInsert := fmt.Sprintf("INSERT INTO users (username, email, age, created_at) VALUES %s",
-		fmt.Sprintf("%s", values[0]))
-	for i := 1; i < len(values); i++ {
-		bulkInsert += ", " + values[i]
-	}
-
-	return connector.ExecuteQuery(bulkInsert)
+	return connector.ExecuteQuery(bulkOp)
 }
 
 // executeAnalyticsOperation executes analytics-heavy operations
 func (st *StressTester) executeAnalyticsOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
-	analytics := []string{
-		`SELECT
-			DATE(o.order_date) as date,
-			COUNT(*) as orders,
-			SUM(o.total_amount) as revenue,
-			AVG(o.total_amount) as avg_order,
-			COUNT(DISTINCT o.user_id) as customers
-		FROM orders o
-		WHERE o.order_date >= DATE_SUB(NOW(), INTERVAL 90 DAY)
-		GROUP BY DATE(o.order_date)
-		ORDER BY date DESC`,
-		`SELECT
-			u.age,
-			COUNT(*) as user_count,
-			AVG(u.total_spent) as avg_spent,
-			SUM(o.total_amount) as total_revenue
-		FROM users u
-		LEFT JOIN orders o ON u.id = o.user_id
-		GROUP BY u.age
-		HAVING user_count > 5
-		ORDER BY total_revenue DESC`,
+	var analytics string
+
+	switch connector.(type) {
+	case *connectors.MySQLConnector:
+		analytics = `SELECT
+			COUNT(*) as total_rows,
+			AVG(CHAR_LENGTH(table_name)) as avg_name_length,
+			COUNT(DISTINCT table_schema) as schemas,
+			SUM(CASE WHEN engine = 'InnoDB' THEN 1 ELSE 0 END) as innodb_tables,
+			MAX(create_time) as newest_table
+		FROM information_schema.tables
+		WHERE table_schema NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+		GROUP BY table_type
+		ORDER BY total_rows DESC`
+
+	case *connectors.PostgreSQLConnector:
+		analytics = `SELECT
+			schemaname,
+			COUNT(*) as table_count,
+			SUM(n_live_tup) as total_rows,
+			SUM(n_dead_tup) as dead_rows,
+			AVG(n_mod_since_analyze) as avg_mods,
+			MAX(last_vacuum) as last_vacuum_time,
+			MAX(last_analyze) as last_analyze_time
+		FROM pg_stat_user_tables
+		GROUP BY schemaname
+		ORDER BY total_rows DESC`
+
+	case *connectors.MSSQLConnector:
+		analytics = `SELECT
+			s.name as schema_name,
+			COUNT(*) as table_count,
+			SUM(p.rows) as total_rows,
+			AVG(p.rows) as avg_rows,
+			COUNT(DISTINCT i.type_desc) as index_types,
+			SUM(CASE WHEN i.is_primary_key = 1 THEN 1 ELSE 0 END) as pk_count
+		FROM sys.tables t
+		JOIN sys.schemas s ON t.schema_id = s.schema_id
+		JOIN sys.partitions p ON t.object_id = p.object_id
+		LEFT JOIN sys.indexes i ON t.object_id = i.object_id
+		WHERE p.index_id IN (0, 1)
+		GROUP BY s.name
+		ORDER BY total_rows DESC`
+
+	default:
+		analytics = "SELECT COUNT(*) FROM test_table"
 	}
 
-	if st.config.RandomizeQueries {
-		query := analytics[st.getRandomIndex(len(analytics))]
-		return connector.ExecuteQuery(query)
+	return connector.ExecuteQuery(analytics)
+}
+
+// initializeStressTables creates necessary tables for stress testing if they don't exist
+func (st *StressTester) initializeStressTables(connector connectors.DatabaseConnector) error {
+	var initQueries []string
+
+	switch connector.(type) {
+	case *connectors.MySQLConnector:
+		initQueries = []string{
+			`CREATE TABLE IF NOT EXISTS stress_test_0 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_1 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_2 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_3 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_4 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_5 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_6 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_7 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_8 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_9 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_0 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_1 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_2 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_3 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_4 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_5 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_6 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_7 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_8 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_9 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+		}
+
+	case *connectors.PostgreSQLConnector:
+		initQueries = []string{
+			`CREATE TABLE IF NOT EXISTS stress_test_0 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_1 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_2 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_3 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_4 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_5 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_6 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_7 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_8 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_test_9 (id INT PRIMARY KEY, data VARCHAR(255), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP)`,
+			`CREATE TABLE IF NOT EXISTS stress_trans_0 (id INT PRIMARY KEY, value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS stress_trans_1 (id INT PRIMARY KEY, value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS stress_trans_99 (id INT PRIMARY KEY, value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_0 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_1 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_2 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_3 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_4 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_5 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_6 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_7 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_8 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+			`CREATE TABLE IF NOT EXISTS bulk_test_9 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP, update_count INT DEFAULT 0)`,
+		}
+
+	case *connectors.MSSQLConnector:
+		initQueries = []string{
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_test_0' AND xtype='U') CREATE TABLE stress_test_0 (id INT PRIMARY KEY, data VARCHAR(255), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_test_1' AND xtype='U') CREATE TABLE stress_test_1 (id INT PRIMARY KEY, data VARCHAR(255), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_test_2' AND xtype='U') CREATE TABLE stress_test_2 (id INT PRIMARY KEY, data VARCHAR(255), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_test_3' AND xtype='U') CREATE TABLE stress_test_3 (id INT PRIMARY KEY, data VARCHAR(255), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_test_4' AND xtype='U') CREATE TABLE stress_test_4 (id INT PRIMARY KEY, data VARCHAR(255), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_test_5' AND xtype='U') CREATE TABLE stress_test_5 (id INT PRIMARY KEY, data VARCHAR(255), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_test_6' AND xtype='U') CREATE TABLE stress_test_6 (id INT PRIMARY KEY, data VARCHAR(255), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_test_7' AND xtype='U') CREATE TABLE stress_test_7 (id INT PRIMARY KEY, data VARCHAR(255), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_test_8' AND xtype='U') CREATE TABLE stress_test_8 (id INT PRIMARY KEY, data VARCHAR(255), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_test_9' AND xtype='U') CREATE TABLE stress_test_9 (id INT PRIMARY KEY, data VARCHAR(255), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_trans_0' AND xtype='U') CREATE TABLE stress_trans_0 (id INT PRIMARY KEY, value DECIMAL(10,2), status VARCHAR(20))`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='stress_trans_99' AND xtype='U') CREATE TABLE stress_trans_99 (id INT PRIMARY KEY, value DECIMAL(10,2), status VARCHAR(20))`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='bulk_test_0' AND xtype='U') CREATE TABLE bulk_test_0 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='bulk_test_1' AND xtype='U') CREATE TABLE bulk_test_1 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='bulk_test_2' AND xtype='U') CREATE TABLE bulk_test_2 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='bulk_test_3' AND xtype='U') CREATE TABLE bulk_test_3 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='bulk_test_4' AND xtype='U') CREATE TABLE bulk_test_4 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='bulk_test_5' AND xtype='U') CREATE TABLE bulk_test_5 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='bulk_test_6' AND xtype='U') CREATE TABLE bulk_test_6 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='bulk_test_7' AND xtype='U') CREATE TABLE bulk_test_7 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='bulk_test_8' AND xtype='U') CREATE TABLE bulk_test_8 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp DATETIME DEFAULT GETDATE())`,
+			`IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='bulk_test_9' AND xtype='U') CREATE TABLE bulk_test_9 (id INT PRIMARY KEY, data VARCHAR(255), value DECIMAL(10,2), timestamp DATETIME DEFAULT GETDATE())`,
+		}
+
+	default:
+		// No initialization needed for other connectors
+		return nil
 	}
-	return connector.ExecuteQuery(analytics[0])
+
+	// Execute initialization queries
+	for _, query := range initQueries {
+		_, err := connector.ExecuteQuery(query)
+		if err != nil {
+			// Log but don't fail - tables might already exist
+			log.Printf("Warning: Could not create table: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // executeConcurrentOperation executes operations designed for concurrency testing
@@ -368,22 +739,50 @@ func (st *StressTester) worker(ctx context.Context, workerID int, connector conn
 				return
 			}
 
-			// Perform operation
-			opResult := st.performOperation(connector)
+			// In burst mode, execute multiple operations rapidly
+			if st.config.BurstMode {
+				// Execute 5-10 operations in rapid succession without delay
+				burstSize := 5 + st.getRandomIndex(6)
+				for i := 0; i < burstSize; i++ {
+					select {
+					case <-ctx.Done():
+						return
+					default:
+						opResult := st.performOperation(connector)
+						select {
+						case results <- opResult:
+							operationCount++
+						case <-ctx.Done():
+							return
+						}
+					}
+				}
+				// Small delay after burst to prevent overwhelming the database
+				if st.config.DelayBetween > 0 {
+					select {
+					case <-time.After(st.config.DelayBetween / 10): // Reduced delay in burst mode
+					case <-ctx.Done():
+						return
+					}
+				}
+			} else {
+				// Normal operation mode
+				opResult := st.performOperation(connector)
 
-			select {
-			case results <- opResult:
-				operationCount++
-			case <-ctx.Done():
-				return
-			}
-
-			// Add delay between operations if configured
-			if st.config.DelayBetween > 0 {
 				select {
-				case <-time.After(st.config.DelayBetween):
+				case results <- opResult:
+					operationCount++
 				case <-ctx.Done():
 					return
+				}
+
+				// Add delay between operations if configured
+				if st.config.DelayBetween > 0 {
+					select {
+					case <-time.After(st.config.DelayBetween):
+					case <-ctx.Done():
+						return
+					}
 				}
 			}
 		}

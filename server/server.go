@@ -748,12 +748,22 @@ func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
         }
 
         async function runHeavyTest() {
-            updateStatus('Starting heavy load test (120s)...');
+            updateStatus('Starting heavy load test (120s with 100 concurrent connections)...');
             try {
                 const response = await fetch('/api/test', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ duration: 120, concurrency: 20, query_type: 'heavy_read' })
+                    body: JSON.stringify({
+                        duration: 120,
+                        concurrency: 100,
+                        query_type: 'mixed',
+                        delay_between: 0,
+                        burst_mode: true,
+                        randomize_queries: true,
+                        read_percent: 40,
+                        write_percent: 40,
+                        transaction_percent: 20
+                    })
                 });
                 let data;
                 const contentType = (response.headers.get('content-type') || '').toLowerCase();
@@ -1883,7 +1893,7 @@ func (s *Server) parseTestConfig(r *http.Request) *stresstester.TestConfig {
 			if reqConfig.QueryType != "" {
 				config.QueryType = reqConfig.QueryType
 			}
-			if reqConfig.DelayBetween > 0 {
+			if reqConfig.DelayBetween >= 0 {
 				config.DelayBetween = time.Duration(reqConfig.DelayBetween) * time.Millisecond
 			}
 			if reqConfig.OperationsLimit > 0 {
@@ -1891,6 +1901,17 @@ func (s *Server) parseTestConfig(r *http.Request) *stresstester.TestConfig {
 			}
 			config.BurstMode = reqConfig.BurstMode
 			config.RandomizeQueries = reqConfig.RandomizeQueries
+
+			// Set mixed workload percentages if provided
+			if reqConfig.ReadPercent > 0 {
+				config.MixedRatio.ReadPercent = reqConfig.ReadPercent
+			}
+			if reqConfig.WritePercent > 0 {
+				config.MixedRatio.WritePercent = reqConfig.WritePercent
+			}
+			if reqConfig.TransactionPercent > 0 {
+				config.MixedRatio.TransactionPercent = reqConfig.TransactionPercent
+			}
 
 			// Set mixed ratio if provided
 			if reqConfig.ReadPercent > 0 || reqConfig.WritePercent > 0 || reqConfig.TransactionPercent > 0 {
