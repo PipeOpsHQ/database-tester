@@ -562,150 +562,203 @@ func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
     <meta charset="UTF-8">
     <title>Database Stress Test Dashboard</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        h1 { color: #333; text-align: center; margin-bottom: 30px; }
-        .buttons { display: flex; gap: 15px; justify-content: center; margin: 30px 0; flex-wrap: wrap; }
-        .btn { padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; font-size: 16px; display: inline-block; }
-        .btn-primary { background: #007bff; color: white; }
-        .btn-success { background: #28a745; color: white; }
-        .btn-warning { background: #ffc107; color: black; }
-        .btn-info { background: #17a2b8; color: white; }
-        .btn-secondary { background: #6c757d; color: white; }
-        .btn:hover { opacity: 0.8; transform: translateY(-1px); transition: all 0.2s; }
-        .status { margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 5px; }
-        .endpoints { margin: 30px 0; }
-        .endpoint { margin: 10px 0; padding: 10px; background: #e9ecef; border-radius: 4px; font-family: monospace; }
-        .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #ddd; color: #666; }
-        .config-section { margin: 20px 0; padding: 15px; background: #fff3cd; border-radius: 5px; border-left: 4px solid #ffc107; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Courier New', monospace;
+            background: #000;
+            color: #00ff00;
+            padding: 20px;
+            line-height: 1.4;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #000;
+            border: 1px solid #333;
+            padding: 20px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 15px;
+        }
+        h1 {
+            color: #00ff00;
+            font-size: 18px;
+            font-weight: normal;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .section {
+            margin: 20px 0;
+            border-top: 1px solid #333;
+            padding-top: 15px;
+        }
+        .section-title {
+            color: #fff;
+            font-size: 14px;
+            margin-bottom: 10px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        .command-list {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+        .command-list li {
+            margin: 5px 0;
+            padding: 2px 0;
+        }
+        .command {
+            color: #00ffff;
+            cursor: pointer;
+            text-decoration: none;
+            font-weight: bold;
+        }
+        .command:hover {
+            color: #fff;
+            background: #333;
+            padding: 2px 4px;
+        }
+        .description {
+            color: #888;
+            margin-left: 10px;
+        }
+        .status-line {
+            color: #ffff00;
+            font-size: 12px;
+            padding: 10px;
+            background: #111;
+            border: 1px solid #333;
+        }
+        a.command {
+            text-decoration: none;
+        }
+        a.command:visited {
+            color: #00ffff;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Database Stress Test Dashboard</h1>
-        <p style="text-align: center; color: #666; margin-bottom: 30px;">
-            PipeOps TCP/UDP Port Testing Service - Multi-Database Stress Testing Platform
-        </p>
-
-        <div class="buttons">
-            <a href="/report" class="btn btn-primary">View Full Report</a>
-            <a href="/live" class="btn btn-success">Live Report</a>
-            <a href="/config-ui" class="btn btn-secondary">Configure Databases</a>
-            <a href="/api/status" class="btn btn-info">Connection Status</a>
-            <a href="/api/health" class="btn btn-warning">Health Check</a>
+        <div class="header">
+            <h1>Database Stress Test Service</h1>
+            <div class="subtitle">PipeOps TCP/UDP Port Testing - Terminal Interface</div>
         </div>
 
-        <div class="config-section">
-            <h3>Database Configuration</h3>
-            <p>Use the <strong>Configure Databases</strong> button above to easily add and test your database credentials through the web interface.</p>
-            <div class="buttons">
-                <button onclick="openConfigUI()" class="btn btn-secondary">Open Configuration UI</button>
-                <button onclick="viewCurrentConfig()" class="btn btn-info">View Current Config</button>
-            </div>
+        <div class="section">
+            <div class="section-title">Quick Commands</div>
+            <ul class="command-list">
+                <li><span class="command" onclick="connectAll()">connect-all</span><span class="description">- Connect to all databases</span></li>
+                <li><span class="command" onclick="runSimpleTest()">test-simple</span><span class="description">- Run simple stress test (30s)</span></li>
+                <li><span class="command" onclick="runHeavyTest()">test-heavy</span><span class="description">- Run heavy load test (120s)</span></li>
+                <li><span class="command" onclick="checkStatus()">status</span><span class="description">- Check database connections</span></li>
+                <li><span class="command" onclick="disconnectAll()">disconnect-all</span><span class="description">- Disconnect all databases</span></li>
+            </ul>
         </div>
 
-        <div class="status">
-            <h3>Quick Actions</h3>
-            <div class="buttons">
-                <button onclick="connectAll()" class="btn btn-success">Connect All DBs</button>
-                <button onclick="runStressTest()" class="btn btn-primary">Run Stress Test</button>
-                <button onclick="checkStatus()" class="btn btn-info">Check Status</button>
-                <button onclick="disconnectAll()" class="btn btn-warning">Disconnect All</button>
-            </div>
+        <div class="section">
+            <div class="section-title">Reports & Configuration</div>
+            <ul class="command-list">
+                <li><a href="/report" class="command">view-report</a><span class="description">- View full test report</span></li>
+                <li><a href="/live" class="command">live-report</a><span class="description">- Live updating report</span></li>
+                <li><a href="/config-ui" class="command">configure</a><span class="description">- Database configuration</span></li>
+            </ul>
         </div>
 
-        <div class="endpoints">
-            <h3>Available Endpoints</h3>
-            <div class="endpoint">GET  / - Dashboard (this page)</div>
-            <div class="endpoint">GET  /config-ui - Database configuration interface</div>
-            <div class="endpoint">GET  /report - Full HTML report</div>
-            <div class="endpoint">GET  /live - Live updating report</div>
-            <div class="endpoint">GET  /api/health - Health check</div>
-            <div class="endpoint">GET  /api/status - Database connection status</div>
-            <div class="endpoint">GET  /api/config - Get current database configuration</div>
-            <div class="endpoint">POST /api/config - Update database configuration</div>
-            <div class="endpoint">POST /api/config/test - Test database connection</div>
-            <div class="endpoint">POST /api/connect - Connect to all databases</div>
-            <div class="endpoint">POST /api/disconnect - Disconnect from all databases</div>
-            <div class="endpoint">POST /api/test - Run stress test on all databases</div>
-            <div class="endpoint">POST /api/test/{database} - Run stress test on specific database</div>
-            <div class="endpoint">POST /api/benchmark - Run custom benchmark</div>
-            <div class="endpoint">GET  /api/results - Get latest test results</div>
+        <div class="section">
+            <div class="section-title">API Endpoints</div>
+            <ul class="command-list">
+                <li><span class="command">GET /api/health</span><span class="description">- Service health check</span></li>
+                <li><span class="command">GET /api/status</span><span class="description">- Connection status</span></li>
+                <li><span class="command">POST /api/connect</span><span class="description">- Connect databases</span></li>
+                <li><span class="command">POST /api/test</span><span class="description">- Run stress test</span></li>
+            </ul>
         </div>
 
-        <div class="footer">
-            <p>Database Stress Test Service v1.0.0</p>
-            <p>Supports: MySQL, PostgreSQL, MongoDB, Redis, Microsoft SQL Server</p>
-            <p>Built for PipeOps TCP/UDP port testing</p>
+        <div class="section">
+            <div class="section-title">System Status</div>
+            <div id="status-output" class="status-line">Ready - Click commands above to interact</div>
         </div>
     </div>
 
     <script>
+        function updateStatus(message) {
+            const status = document.getElementById('status-output');
+            status.textContent = new Date().toLocaleTimeString() + ' - ' + message;
+        }
+
         async function connectAll() {
+            updateStatus('Connecting to all databases...');
             try {
                 const response = await fetch('/api/connect', { method: 'POST' });
                 const data = await response.json();
-                alert('Connect attempt completed. Check status for details.');
+                updateStatus('Connect attempt completed - ' + data.connected_count + ' databases connected');
             } catch (error) {
-                alert('Error: ' + error.message);
+                updateStatus('Error: ' + error.message);
             }
         }
 
-        async function runStressTest() {
-            if (!confirm('Run stress test on all connected databases? This may take some time.')) return;
-
+        async function runSimpleTest() {
+            updateStatus('Starting simple stress test (30s)...');
             try {
                 const response = await fetch('/api/test', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ duration: 30, concurrency: 10, query_type: 'simple' })
+                    body: JSON.stringify({ duration: 30, concurrency: 5, query_type: 'simple' })
                 });
                 const data = await response.json();
-                alert('Stress test completed! Check the report page for details.');
-                window.open('/report', '_blank');
+                updateStatus('Simple test completed - view report for details');
             } catch (error) {
-                alert('Error: ' + error.message);
+                updateStatus('Error: ' + error.message);
+            }
+        }
+
+        async function runHeavyTest() {
+            updateStatus('Starting heavy load test (120s)...');
+            try {
+                const response = await fetch('/api/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ duration: 120, concurrency: 20, query_type: 'heavy_read' })
+                });
+                const data = await response.json();
+                updateStatus('Heavy test completed - view report for details');
+            } catch (error) {
+                updateStatus('Error: ' + error.message);
             }
         }
 
         async function checkStatus() {
+            updateStatus('Checking database status...');
             try {
                 const response = await fetch('/api/status');
                 const data = await response.json();
-                let message = 'Database Status:\n';
+                let connected = 0;
+                let total = 0;
                 for (const [db, status] of Object.entries(data.connection_status)) {
-                    message += db + ': ' + status + '\n';
+                    total++;
+                    if (status === 'Connected') connected++;
                 }
-                alert(message);
+                updateStatus('Status check complete - ' + connected + '/' + total + ' databases connected');
             } catch (error) {
-                alert('Error: ' + error.message);
+                updateStatus('Error: ' + error.message);
             }
         }
 
         async function disconnectAll() {
-            if (!confirm('Disconnect from all databases?')) return;
-
+            updateStatus('Disconnecting from all databases...');
             try {
                 const response = await fetch('/api/disconnect', { method: 'POST' });
                 const data = await response.json();
-                alert('Disconnected from all databases.');
+                updateStatus('All databases disconnected');
             } catch (error) {
-                alert('Error: ' + error.message);
-            }
-        }
-
-        function openConfigUI() {
-            window.open('/config-ui', '_blank');
-        }
-
-        async function viewCurrentConfig() {
-            try {
-                const response = await fetch('/api/config');
-                const data = await response.json();
-                console.log('Current configuration:', data);
-                alert('Current configuration loaded. Check browser console for details.');
-            } catch (error) {
-                alert('Error: ' + error.message);
+                updateStatus('Error: ' + error.message);
             }
         }
     </script>
@@ -727,83 +780,162 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
     <title>Database Configuration - Stress Test Service</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; line-height: 1.6; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; border-radius: 10px; margin-bottom: 30px; text-align: center; }
-        .header h1 { font-size: 2.5em; margin-bottom: 10px; }
-        .header .subtitle { font-size: 1.2em; opacity: 0.9; }
-
-        .nav-buttons { display: flex; gap: 15px; justify-content: center; margin-bottom: 30px; flex-wrap: wrap; }
-        .btn { padding: 12px 24px; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 600; text-decoration: none; display: inline-block; transition: all 0.3s; }
-        .btn-primary { background: #007bff; color: white; }
-        .btn-success { background: #28a745; color: white; }
-        .btn-warning { background: #ffc107; color: #212529; }
-        .btn-danger { background: #dc3545; color: white; }
-        .btn-secondary { background: #6c757d; color: white; }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
-
-        .database-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 25px; margin-bottom: 30px; }
-        .database-card { background: white; border-radius: 15px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); border-left: 5px solid #007bff; }
-        .database-card.mysql { border-left-color: #f39c12; }
-        .database-card.postgresql { border-left-color: #336791; }
-        .database-card.redis { border-left-color: #d82c20; }
-        .database-card.mssql { border-left-color: #cc2927; }
-        .database-card.mongodb { border-left-color: #4db33d; }
-
-        .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        .card-title { font-size: 1.4em; font-weight: bold; color: #333; }
-        .status-indicator { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: bold; }
-        .status-connected { background: #d4edda; color: #155724; }
-        .status-disconnected { background: #f8d7da; color: #721c24; }
-        .status-unknown { background: #fff3cd; color: #856404; }
-
-        .form-group { margin-bottom: 15px; }
-        .form-label { display: block; margin-bottom: 5px; font-weight: 600; color: #555; }
-        .form-input { width: 100%; padding: 10px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; transition: border-color 0.3s; }
-        .form-input:focus { outline: none; border-color: #007bff; }
-        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-
-        .card-actions { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
-        .btn-small { padding: 8px 16px; font-size: 12px; }
-
-        .global-actions { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
-
-        .message { padding: 15px; border-radius: 8px; margin: 15px 0; display: none; }
-        .message.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
-        .message.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
-        .message.info { background: #cce7ff; color: #004085; border: 1px solid #b8daff; }
-
-        .loading { display: none; text-align: center; padding: 20px; }
-        .spinner { display: inline-block; width: 20px; height: 20px; border: 3px solid #f3f3f3; border-top: 3px solid #007bff; border-radius: 50%; animation: spin 1s linear infinite; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-
-        .collapsible { cursor: pointer; user-select: none; }
-        .collapsible:after { content: '▼'; float: right; margin-left: 10px; transition: transform 0.3s; }
-        .collapsible.collapsed:after { transform: rotate(-90deg); }
-        .collapsible-content { display: block; overflow: hidden; transition: max-height 0.3s ease-out; }
-        .collapsible-content.collapsed { max-height: 0; }
-
-        .modal {
-            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-            background: rgba(0,0,0,0.5); z-index: 1000;
-            display: flex; align-items: center; justify-content: center;
+        body {
+            font-family: 'Courier New', monospace;
+            background: #000;
+            color: #00ff00;
+            padding: 20px;
+            line-height: 1.4;
         }
-        .modal-content {
-            background: white; padding: 30px; border-radius: 10px; width: 90%; max-width: 600px;
-            max-height: 90vh; overflow-y: auto;
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: #000;
+            border: 1px solid #333;
+            padding: 20px;
         }
-        .modal-actions {
-            margin-top: 20px; text-align: right;
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 1px solid #333;
+            padding-bottom: 15px;
         }
-        .modal-actions .btn { margin-left: 10px; }
-        .form-section { margin: 20px 0; padding: 15px; border: 1px solid #e0e0e0; border-radius: 5px; }
-        .form-section h4 { margin-bottom: 15px; color: #333; }
-
-        @media (max-width: 768px) {
-            .database-grid { grid-template-columns: 1fr; }
-            .form-row { grid-template-columns: 1fr; }
-            .nav-buttons { flex-direction: column; align-items: center; }
-            .modal-content { width: 95%; padding: 20px; }
+        h1 {
+            color: #00ff00;
+            font-size: 18px;
+            font-weight: normal;
+        }
+        .subtitle {
+            color: #888;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        .nav-buttons {
+            text-align: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #333;
+        }
+        .nav-buttons a, .nav-buttons button {
+            color: #00ffff;
+            background: transparent;
+            border: 1px solid #333;
+            padding: 5px 15px;
+            margin: 5px;
+            text-decoration: none;
+            font-family: inherit;
+            cursor: pointer;
+        }
+        .nav-buttons a:hover, .nav-buttons button:hover {
+            background: #333;
+            color: #fff;
+        }
+        .database-card {
+            border: 1px solid #333;
+            margin-bottom: 20px;
+            padding: 15px;
+        }
+        .card-header {
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .card-title {
+            color: #fff;
+            font-size: 14px;
+            text-transform: uppercase;
+        }
+        .status-indicator {
+            float: right;
+            font-size: 12px;
+        }
+        .status-connected { color: #00ff00; }
+        .status-disconnected { color: #ff0000; }
+        .status-unknown { color: #ffff00; }
+        .form-group {
+            margin-bottom: 10px;
+        }
+        .form-label {
+            color: #888;
+            font-size: 12px;
+            margin-bottom: 3px;
+            display: block;
+        }
+        .form-input {
+            width: 100%;
+            background: #111;
+            border: 1px solid #333;
+            color: #00ff00;
+            padding: 5px;
+            font-family: inherit;
+            font-size: 12px;
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: #00ffff;
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+        .card-actions {
+            margin-top: 15px;
+            text-align: center;
+        }
+        .card-actions button {
+            background: transparent;
+            border: 1px solid #333;
+            color: #00ffff;
+            padding: 5px 10px;
+            margin: 0 5px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 11px;
+        }
+        .card-actions button:hover {
+            background: #333;
+            color: #fff;
+        }
+        .message {
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #333;
+            font-size: 12px;
+            display: none;
+        }
+        .message.success { color: #00ff00; border-color: #00ff00; }
+        .message.error { color: #ff0000; border-color: #ff0000; }
+        .message.info { color: #ffff00; border-color: #ffff00; }
+        .loading {
+            text-align: center;
+            color: #ffff00;
+            font-size: 12px;
+            display: none;
+        }
+        .global-actions {
+            border-top: 1px solid #333;
+            padding-top: 20px;
+            text-align: center;
+        }
+        .global-actions h3 {
+            color: #fff;
+            font-size: 14px;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+        }
+        .global-actions button {
+            background: transparent;
+            border: 1px solid #333;
+            color: #00ffff;
+            padding: 8px 15px;
+            margin: 5px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .global-actions button:hover {
+            background: #333;
+            color: #fff;
         }
     </style>
 </head>
@@ -815,10 +947,10 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
         </div>
 
         <div class="nav-buttons">
-            <a href="/" class="btn btn-secondary">Dashboard</a>
-            <button onclick="loadCurrentConfig()" class="btn btn-primary">Reload Config</button>
-            <button onclick="saveAllConfigs()" class="btn btn-success">Save All</button>
-            <button onclick="testAllConnections()" class="btn btn-warning">Test All</button>
+            <a href="/">dashboard</a>
+            <button onclick="loadCurrentConfig()">reload-config</button>
+            <button onclick="saveAllConfigs()">save-all</button>
+            <button onclick="testAllConnections()">test-all</button>
         </div>
 
         <div id="message-container"></div>
@@ -1031,98 +1163,9 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
 
         <div class="global-actions">
             <h3>Quick Actions</h3>
-            <div class="nav-buttons" style="margin-top: 15px;">
-                <button onclick="connectAllDatabases()" class="btn btn-success">Connect All</button>
-                <button onclick="showAdvancedTestOptions()" class="btn btn-primary">Advanced Stress Test</button>
-                <button onclick="runQuickStressTest()" class="btn btn-warning">Quick Test</button>
-                <button onclick="viewReport()" class="btn btn-info">View Report</button>
-            </div>
-        </div>
-
-        <!-- Advanced Test Configuration Modal -->
-        <div id="advanced-test-modal" class="modal" style="display: none;">
-            <div class="modal-content">
-                <h3>Advanced Stress Test Configuration</h3>
-                <form id="advanced-test-form">
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Test Duration (seconds)</label>
-                            <input type="number" class="form-input" name="duration" value="30" min="5" max="3600">
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Concurrency Level</label>
-                            <input type="number" class="form-input" name="concurrency" value="10" min="1" max="100">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">Query Type</label>
-                            <select class="form-input" name="query_type" onchange="toggleMixedRatioOptions()">
-                                <option value="simple">Simple</option>
-                                <option value="complex">Complex</option>
-                                <option value="heavy_read">Heavy Read</option>
-                                <option value="heavy_write">Heavy Write</option>
-                                <option value="mixed">Mixed Workload</option>
-                                <option value="transaction">Transaction</option>
-                                <option value="bulk">Bulk Operations</option>
-                                <option value="analytics">Analytics</option>
-                                <option value="concurrent">Concurrent</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">Delay Between Operations (ms)</label>
-                            <input type="number" class="form-input" name="delay_between" value="100" min="0" max="5000">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label class="form-label">
-                                <input type="checkbox" name="burst_mode"> Burst Mode (No delays)
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label class="form-label">
-                                <input type="checkbox" name="randomize_queries" checked> Randomize Queries
-                            </label>
-                        </div>
-                    </div>
-
-                    <!-- Mixed Workload Ratios -->
-                    <div id="mixed-ratio-options" class="form-section" style="display: none;">
-                        <h4>Mixed Workload Ratios</h4>
-                        <div class="form-row">
-                            <div class="form-group">
-                                <label class="form-label">Read Operations (%)</label>
-                                <input type="number" class="form-input" name="read_percent" value="70" min="0" max="100">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Write Operations (%)</label>
-                                <input type="number" class="form-input" name="write_percent" value="25" min="0" max="100">
-                            </div>
-                            <div class="form-group">
-                                <label class="form-label">Transaction Operations (%)</label>
-                                <input type="number" class="form-input" name="transaction_percent" value="5" min="0" max="100">
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Preset Configurations -->
-                    <div class="form-section">
-                        <h4>Preset Configurations</h4>
-                        <div class="nav-buttons">
-                            <button type="button" onclick="applyPreset('light')" class="btn btn-secondary btn-small">Light Load</button>
-                            <button type="button" onclick="applyPreset('moderate')" class="btn btn-secondary btn-small">Moderate Load</button>
-                            <button type="button" onclick="applyPreset('heavy')" class="btn btn-secondary btn-small">Heavy Load</button>
-                            <button type="button" onclick="applyPreset('extreme')" class="btn btn-secondary btn-small">Extreme Load</button>
-                        </div>
-                    </div>
-                </form>
-
-                <div class="modal-actions">
-                    <button onclick="runAdvancedStressTest()" class="btn btn-primary">Run Test</button>
-                    <button onclick="hideAdvancedTestOptions()" class="btn btn-secondary">Cancel</button>
-                </div>
-            </div>
+            <button onclick="connectAllDatabases()">connect-all</button>
+            <button onclick="runQuickStressTest()">test-simple</button>
+            <button onclick="viewReport()">view-report</button>
         </div>
     </div>
 
@@ -1498,161 +1541,16 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
         }
 
         async function runQuickStressTest() {
-            if (!confirm('Run a quick stress test on all connected databases? This will take about 30 seconds.')) {
-                return;
-            }
-
+            showMessage('Starting simple test (30s)...', 'info');
             try {
-                showLoading(true);
-                showMessage('Starting quick stress test...', 'info');
-
                 const response = await fetch('/api/test', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        duration: 30,
-                        concurrency: 10,
-                        query_type: 'simple'
-                    })
+                    body: JSON.stringify({ duration: 30, concurrency: 5, query_type: 'simple' })
                 });
-
-                let data;
-                const contentType = response.headers.get('content-type');
-
-                if (contentType && contentType.includes('application/json')) {
-                    try {
-                        data = await response.json();
-                    } catch (jsonError) {
-                        throw new Error('Invalid JSON response from server');
-                    }
-                } else {
-                    const text = await response.text();
-                    throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
-                }
-                showMessage('Quick stress test completed! View the report to see results.', 'success');
+                showMessage('Simple test completed - check report', 'success');
             } catch (error) {
-                showMessage('Stress test error: ' + error.message, 'error');
-            } finally {
-                showLoading(false);
-            }
-        }
-
-        function showAdvancedTestOptions() {
-            document.getElementById('advanced-test-modal').style.display = 'block';
-        }
-
-        function hideAdvancedTestOptions() {
-            document.getElementById('advanced-test-modal').style.display = 'none';
-        }
-
-        function toggleMixedRatioOptions() {
-            const queryType = document.querySelector('select[name="query_type"]').value;
-            const mixedOptions = document.getElementById('mixed-ratio-options');
-            mixedOptions.style.display = queryType === 'mixed' ? 'block' : 'none';
-        }
-
-        function applyPreset(preset) {
-            const form = document.getElementById('advanced-test-form');
-
-            switch(preset) {
-                case 'light':
-                    form.duration.value = 30;
-                    form.concurrency.value = 5;
-                    form.query_type.value = 'simple';
-                    form.delay_between.value = 200;
-                    form.burst_mode.checked = false;
-                    break;
-                case 'moderate':
-                    form.duration.value = 60;
-                    form.concurrency.value = 15;
-                    form.query_type.value = 'mixed';
-                    form.delay_between.value = 100;
-                    form.burst_mode.checked = false;
-                    form.read_percent.value = 70;
-                    form.write_percent.value = 25;
-                    form.transaction_percent.value = 5;
-                    break;
-                case 'heavy':
-                    form.duration.value = 120;
-                    form.concurrency.value = 30;
-                    form.query_type.value = 'heavy_read';
-                    form.delay_between.value = 50;
-                    form.burst_mode.checked = true;
-                    break;
-                case 'extreme':
-                    form.duration.value = 300;
-                    form.concurrency.value = 50;
-                    form.query_type.value = 'mixed';
-                    form.delay_between.value = 10;
-                    form.burst_mode.checked = true;
-                    form.read_percent.value = 60;
-                    form.write_percent.value = 30;
-                    form.transaction_percent.value = 10;
-                    break;
-            }
-            toggleMixedRatioOptions();
-        }
-
-        async function runAdvancedStressTest() {
-            const form = document.getElementById('advanced-test-form');
-            const formData = new FormData(form);
-
-            const config = {
-                duration: parseInt(formData.get('duration')),
-                concurrency: parseInt(formData.get('concurrency')),
-                query_type: formData.get('query_type'),
-                delay_between: parseInt(formData.get('delay_between')),
-                burst_mode: formData.get('burst_mode') === 'on',
-                randomize_queries: formData.get('randomize_queries') === 'on'
-            };
-
-            // Add mixed workload ratios if applicable
-            if (config.query_type === 'mixed') {
-                config.read_percent = parseInt(formData.get('read_percent'));
-                config.write_percent = parseInt(formData.get('write_percent'));
-                config.transaction_percent = parseInt(formData.get('transaction_percent'));
-
-                // Validate percentages sum to 100
-                const total = config.read_percent + config.write_percent + config.transaction_percent;
-                if (total !== 100) {
-                    showMessage('Mixed workload percentages must sum to 100%', 'error');
-                    return;
-                }
-            }
-
-            if (!confirm('Run advanced stress test with ' + config.concurrency + ' concurrent operations for ' + config.duration + ' seconds using ' + config.query_type + ' queries?')) {
-                return;
-            }
-
-            try {
-                hideAdvancedTestOptions();
-                showLoading(true);
-                showMessage('Starting advanced stress test (' + config.query_type + ')... This may take ' + config.duration + ' seconds or more.', 'info');
-
-                const response = await fetch('/api/test', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(config)
-                });
-
-                let data;
-                const contentType = response.headers.get('content-type');
-
-                if (contentType && contentType.includes('application/json')) {
-                    try {
-                        data = await response.json();
-                    } catch (jsonError) {
-                        throw new Error('Invalid JSON response from server');
-                    }
-                } else {
-                    const text = await response.text();
-                    throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
-                }
-                showMessage('Advanced stress test completed! View the report to see detailed results.', 'success');
-            } catch (error) {
-                showMessage('Advanced stress test error: ' + error.message, 'error');
-            } finally {
-                showLoading(false);
+                showMessage('Error: ' + error.message, 'error');
             }
         }
 
@@ -1680,18 +1578,43 @@ func (s *Server) reportHandler(w http.ResponseWriter, r *http.Request) {
 <head>
     <title>No Test Results</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 40px; text-align: center; background: #f5f5f5; }
-        .container { max-width: 600px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .btn { padding: 12px 24px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; font-size: 16px; background: #007bff; color: white; margin: 10px; }
-        .btn:hover { opacity: 0.8; }
+        body {
+            font-family: 'Courier New', monospace;
+            margin: 40px;
+            text-align: center;
+            background: #000;
+            color: #00ff00;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #000;
+            padding: 40px;
+            border: 1px solid #333;
+        }
+        .btn {
+            padding: 8px 16px;
+            border: 1px solid #333;
+            background: transparent;
+            cursor: pointer;
+            text-decoration: none;
+            font-size: 12px;
+            color: #00ffff;
+            margin: 10px;
+            font-family: inherit;
+        }
+        .btn:hover {
+            background: #333;
+            color: #fff;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>No Test Results Available</h1>
-        <p>No stress tests have been run yet. Run a test to see the report.</p>
-        <a href="/" class="btn">Go to Dashboard</a>
-        <button onclick="runTest()" class="btn">Run Test Now</button>
+        <h1>no test results available</h1>
+        <p>no stress tests have been run yet - run a test to see the report</p>
+        <a href="/" class="btn">dashboard</a>
+        <button onclick="runTest()" class="btn">run-test-now</button>
     </div>
     <script>
         async function runTest() {
@@ -1733,18 +1656,74 @@ func (s *Server) liveReportHandler(w http.ResponseWriter, r *http.Request) {
 <head>
     <title>Live Database Report</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .header { background: #007bff; color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
-        .controls { background: white; padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; }
-        .btn { padding: 8px 16px; margin: 0 5px; border: none; border-radius: 4px; cursor: pointer; }
-        .btn-primary { background: #007bff; color: white; }
-        .btn-success { background: #28a745; color: white; }
-        .status { margin: 10px 0; padding: 10px; border-radius: 4px; }
-        .status.loading { background: #fff3cd; }
-        .status.success { background: #d4edda; }
-        .status.error { background: #f8d7da; }
-        #report-container { background: white; border-radius: 8px; overflow: hidden; }
+        body {
+            font-family: 'Courier New', monospace;
+            margin: 0;
+            padding: 20px;
+            background: #000;
+            color: #00ff00;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            border: 1px solid #333;
+            background: #000;
+        }
+        .header {
+            background: #000;
+            color: #00ff00;
+            padding: 15px;
+            border-bottom: 1px solid #333;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 16px;
+            font-weight: normal;
+            margin: 0;
+        }
+        .controls {
+            background: #000;
+            padding: 10px;
+            border-bottom: 1px solid #333;
+            text-align: center;
+        }
+        .btn {
+            padding: 5px 10px;
+            margin: 0 5px;
+            border: 1px solid #333;
+            background: transparent;
+            color: #00ffff;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 11px;
+        }
+        .btn:hover {
+            background: #333;
+            color: #fff;
+        }
+        .status {
+            margin: 10px;
+            padding: 8px;
+            border: 1px solid #333;
+            font-size: 12px;
+        }
+        .status.loading { color: #ffff00; }
+        .status.success { color: #00ff00; }
+        .status.error { color: #ff0000; }
+        #report-container {
+            background: #000;
+            padding: 15px;
+            font-size: 12px;
+            overflow: auto;
+        }
+        #last-updated {
+            font-size: 12px;
+            color: #888;
+        }
+        #auto-refresh-status {
+            color: #888;
+            font-size: 11px;
+        }
     </style>
 </head>
 <body>
@@ -1755,14 +1734,14 @@ func (s *Server) liveReportHandler(w http.ResponseWriter, r *http.Request) {
         </div>
 
         <div class="controls">
-            <button onclick="refreshNow()" class="btn btn-primary">Refresh Now</button>
-            <button onclick="runNewTest()" class="btn btn-success">Run New Test</button>
-            <span id="auto-refresh-status">Auto-refresh: ON</span>
-            <button onclick="toggleAutoRefresh()" class="btn btn-secondary" id="toggle-btn">Pause</button>
+            <button onclick="refreshNow()" class="btn">refresh-now</button>
+            <button onclick="runNewTest()" class="btn">run-test</button>
+            <span id="auto-refresh-status">auto-refresh: on</span>
+            <button onclick="toggleAutoRefresh()" class="btn" id="toggle-btn">pause</button>
         </div>
 
-        <div id="status" class="status">Ready</div>
-        <div id="report-container">Loading report...</div>
+        <div id="status" class="status">ready - loading report...</div>
+        <div id="report-container">loading...</div>
     </div>
 
     <script>
@@ -1793,19 +1772,17 @@ func (s *Server) liveReportHandler(w http.ResponseWriter, r *http.Request) {
         }
 
         async function runNewTest() {
-            if (!confirm('Run a new stress test? This will take about 30 seconds.')) return;
-
             try {
-                updateStatus('Starting new stress test...', 'loading');
+                updateStatus('starting new test (30s)...', 'loading');
                 await fetch('/api/test', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ duration: 30, concurrency: 5, query_type: 'simple' })
                 });
-                updateStatus('Test completed, refreshing report...', 'loading');
+                updateStatus('test completed, refreshing...', 'loading');
                 setTimeout(loadReport, 2000);
             } catch (error) {
-                updateStatus('Error running test: ' + error.message, 'error');
+                updateStatus('error: ' + error.message, 'error');
             }
         }
 
@@ -1815,12 +1792,12 @@ func (s *Server) liveReportHandler(w http.ResponseWriter, r *http.Request) {
             const status = document.getElementById('auto-refresh-status');
 
             if (autoRefresh) {
-                btn.textContent = 'Pause';
-                status.textContent = 'Auto-refresh: ON';
+                btn.textContent = 'pause';
+                status.textContent = 'auto-refresh: on';
                 startAutoRefresh();
             } else {
-                btn.textContent = 'Resume';
-                status.textContent = 'Auto-refresh: OFF';
+                btn.textContent = 'resume';
+                status.textContent = 'auto-refresh: off';
                 if (refreshInterval) clearInterval(refreshInterval);
             }
         }
