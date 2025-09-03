@@ -218,6 +218,9 @@ func (s *Server) runStressTestHandler(w http.ResponseWriter, r *http.Request) {
 	// Parse test configuration from request
 	testConfig := s.parseTestConfig(r)
 
+	// Ensure all databases are connected before running the stress test
+	s.connectorManager.ConnectAll()
+
 	// Update stress tester with new config
 	allConnectors := s.connectorManager.GetAllConnectors()
 	s.stressTester = stresstester.NewStressTester(allConnectors, testConfig)
@@ -251,6 +254,9 @@ func (s *Server) runSingleTestHandler(w http.ResponseWriter, r *http.Request) {
 	dbName := vars["database"]
 
 	testConfig := s.parseTestConfig(r)
+
+	// Ensure all databases are connected before running the stress test
+	s.connectorManager.ConnectAll()
 
 	log.Printf("Starting stress test for database: %s", dbName)
 

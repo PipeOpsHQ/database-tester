@@ -36,7 +36,7 @@ WORKDIR /home/appuser
 COPY --from=builder /app/stress-test .
 
 # Copy templates directory if it exists
-COPY --from=builder /app/templates ./templates/ 2>/dev/null || true
+# COPY --from=builder /app/templates ./templates/ 2>/dev/null || true
 
 # Set proper permissions
 RUN chown -R appuser:appuser /home/appuser && \
