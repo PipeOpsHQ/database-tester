@@ -43,14 +43,93 @@ func NewReportGenerator() *ReportGenerator {
 		"GetStatusClass":      GetStatusClass,
 		"GetPerformanceClass": GetPerformanceClass,
 		"GetErrorRateClass":   GetErrorRateClass,
-		"sub":                 func(a, b float64) float64 { return a - b },
-		"add":                 func(a, b int64) int64 { return a + b },
-		"mul":                 func(a, b int64) int64 { return a * b },
-		"div": func(a, b int64) int64 {
-			if b == 0 {
+		"sub": func(a, b interface{}) interface{} {
+			switch va := a.(type) {
+			case int:
+				if vb, ok := b.(int); ok {
+					return va - vb
+				}
+			case float64:
+				if vb, ok := b.(float64); ok {
+					return va - vb
+				}
+			}
+			return 0
+		},
+		"add": func(a, b interface{}) interface{} {
+			switch va := a.(type) {
+			case int:
+				if vb, ok := b.(int); ok {
+					return va + vb
+				}
+			case int64:
+				if vb, ok := b.(int64); ok {
+					return va + vb
+				}
+			}
+			return 0
+		},
+		"mul": func(a, b interface{}) interface{} {
+			switch va := a.(type) {
+			case int:
+				if vb, ok := b.(int); ok {
+					return va * vb
+				}
+			case int64:
+				if vb, ok := b.(int64); ok {
+					return va * vb
+				}
+			}
+			return 0
+		},
+		"div": func(a, b interface{}) interface{} {
+			switch va := a.(type) {
+			case int:
+				if vb, ok := b.(int); ok && vb != 0 {
+					return va / vb
+				}
+			case int64:
+				if vb, ok := b.(int64); ok && vb != 0 {
+					return va / vb
+				}
+			}
+			return 0
+		},
+		"len": func(v interface{}) int {
+			switch s := v.(type) {
+			case []string:
+				return len(s)
+			case string:
+				return len(s)
+			default:
 				return 0
 			}
-			return a / b
+		},
+		"gt": func(a, b interface{}) bool {
+			switch va := a.(type) {
+			case int:
+				if vb, ok := b.(int); ok {
+					return va > vb
+				}
+			case float64:
+				if vb, ok := b.(float64); ok {
+					return va > vb
+				}
+			}
+			return false
+		},
+		"lt": func(a, b interface{}) bool {
+			switch va := a.(type) {
+			case int:
+				if vb, ok := b.(int); ok {
+					return va < vb
+				}
+			case float64:
+				if vb, ok := b.(float64); ok {
+					return va < vb
+				}
+			}
+			return false
 		},
 	}
 
@@ -559,14 +638,14 @@ LATENCY STATISTICS:
         </div>
 
         {{range $db, $result := .TestResults}}
-        {{if gt (len $result.Errors) 0}}
+        {{if $result.Errors}}
         <div class="section">
             <div class="section-header">
                 <h2>{{$db}} - Error Details</h2>
             </div>
             <div class="section-content">
-                <pre style="color: #ff6666; font-size: 12px; max-height: 200px; overflow-y: auto;">{{range $i, $err := $result.Errors}}{{if lt $i 10}}{{$err}}
-{{end}}{{end}}{{if gt (len $result.Errors) 10}}... and {{sub (len $result.Errors) 10}} more errors{{end}}</pre>
+                <pre style="color: #ff6666; font-size: 12px; max-height: 200px; overflow-y: auto;">{{range $result.Errors}}{{.}}
+{{end}}</pre>
             </div>
         </div>
         {{end}}
