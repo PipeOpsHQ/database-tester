@@ -8,14 +8,15 @@ import (
 	"time"
 
 	"tcp-stress-test/config"
+	"tcp-stress-test/queries"
 
 	_ "github.com/denisenkom/go-mssqldb"
 	"github.com/go-redis/redis/v8"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
-	// "go.mongodb.org/mongo-driver/bson"
-	// "go.mongodb.org/mongo-driver/mongo"
-	// "go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 // DatabaseConnector defines the interface for database operations
@@ -40,38 +41,46 @@ type QueryResult struct {
 
 // MySQLConnector implements DatabaseConnector for MySQL
 type MySQLConnector struct {
-	config *config.MySQLConfig
-	db     *sql.DB
+	config   *config.MySQLConfig
+	db       *sql.DB
+	queryLib *queries.QueryLibrary
 }
 
 // PostgreSQLConnector implements DatabaseConnector for PostgreSQL
 type PostgreSQLConnector struct {
-	config *config.PostgreSQLConfig
-	db     *sql.DB
+	config   *config.PostgreSQLConfig
+	db       *sql.DB
+	queryLib *queries.QueryLibrary
 }
 
-// MongoDBConnector implements DatabaseConnector for MongoDB (temporarily disabled)
+// MongoDBConnector implements DatabaseConnector for MongoDB
 type MongoDBConnector struct {
-	config *config.MongoDBConfig
-	// client *mongo.Client
-	// db     *mongo.Database
+	config   *config.MongoDBConfig
+	client   *mongo.Client
+	db       *mongo.Database
+	queryLib *queries.QueryLibrary
 }
 
 // RedisConnector implements DatabaseConnector for Redis
 type RedisConnector struct {
-	config *config.RedisConfig
-	client *redis.Client
+	config   *config.RedisConfig
+	client   *redis.Client
+	queryLib *queries.QueryLibrary
 }
 
 // MSSQLConnector implements DatabaseConnector for MSSQL
 type MSSQLConnector struct {
-	config *config.MSSQLConfig
-	db     *sql.DB
+	config   *config.MSSQLConfig
+	db       *sql.DB
+	queryLib *queries.QueryLibrary
 }
 
 // NewMySQLConnector creates a new MySQL connector
 func NewMySQLConnector(cfg *config.MySQLConfig) *MySQLConnector {
-	return &MySQLConnector{config: cfg}
+	return &MySQLConnector{
+		config:   cfg,
+		queryLib: queries.NewQueryLibrary(),
+	}
 }
 
 // Connect establishes MySQL connection
@@ -126,27 +135,43 @@ func (m *MySQLConnector) ExecuteQuery(query string) (*QueryResult, error) {
 
 // ExecuteComplexQuery executes a complex query for stress testing
 func (m *MySQLConnector) ExecuteComplexQuery() (*QueryResult, error) {
-	complexQuery := `
-		SELECT
-			t1.id,
-			t1.name,
-			COUNT(t2.id) as related_count,
-			AVG(t2.value) as avg_value,
-			MAX(t2.created_at) as latest_update
-		FROM
-			(SELECT 1 as id, 'Test Record 1' as name UNION ALL
-			 SELECT 2 as id, 'Test Record 2' as name UNION ALL
-			 SELECT 3 as id, 'Test Record 3' as name) t1
-		LEFT JOIN
-			(SELECT 1 as id, 1 as parent_id, RAND() * 100 as value, NOW() as created_at FROM DUAL UNION ALL
-			 SELECT 2 as id, 1 as parent_id, RAND() * 100 as value, NOW() as created_at FROM DUAL UNION ALL
-			 SELECT 3 as id, 2 as parent_id, RAND() * 100 as value, NOW() as created_at FROM DUAL UNION ALL
-			 SELECT 4 as id, 3 as parent_id, RAND() * 100 as value, NOW() as created_at FROM DUAL) t2
-		ON t1.id = t2.parent_id
-		GROUP BY t1.id, t1.name
-		ORDER BY t1.id
-	`
-	return m.ExecuteQuery(complexQuery)
+	// Get a complex query from the query library
+	query, err := m.queryLib.GetQuery(queries.DatabaseMySQL, queries.QueryTypeComplex)
+	if err != nil {
+		// Fallback to analytics query if complex not available
+		query, err = m.queryLib.GetQuery(queries.DatabaseMySQL, queries.QueryTypeAnalytics)
+		if err != nil {
+			// Final fallback to join query
+			query, err = m.queryLib.GetQuery(queries.DatabaseMySQL, queries.QueryTypeJoin)
+			if err != nil {
+				// Ultimate fallback to hardcoded query
+				complexQuery := `
+					SELECT
+						t1.id,
+						t1.name,
+						COUNT(t2.id) as related_count,
+						AVG(t2.value) as avg_value,
+						MAX(t2.created_at) as latest_update
+					FROM
+						(SELECT 1 as id, 'Test Record 1' as name UNION ALL
+						 SELECT 2 as id, 'Test Record 2' as name UNION ALL
+						 SELECT 3 as id, 'Test Record 3' as name) t1
+					LEFT JOIN
+						(SELECT 1 as id, 1 as parent_id, RAND() * 100 as value, NOW() as created_at FROM DUAL UNION ALL
+						 SELECT 2 as id, 1 as parent_id, RAND() * 100 as value, NOW() as created_at FROM DUAL UNION ALL
+						 SELECT 3 as id, 2 as parent_id, RAND() * 100 as value, NOW() as created_at FROM DUAL UNION ALL
+						 SELECT 4 as id, 3 as parent_id, RAND() * 100 as value, NOW() as created_at FROM DUAL) t2
+					ON t1.id = t2.parent_id
+					GROUP BY t1.id, t1.name
+					ORDER BY t1.id
+				`
+				return m.ExecuteQuery(complexQuery)
+			}
+		}
+	}
+
+	log.Printf("Executing MySQL complex query: %s", query.Name)
+	return m.ExecuteQuery(query.SQL)
 }
 
 // GetConnectionInfo returns MySQL connection information
@@ -187,7 +212,10 @@ func (m *MySQLConnector) UpdateConfig(cfg *config.MySQLConfig) error {
 
 // NewPostgreSQLConnector creates a new PostgreSQL connector
 func NewPostgreSQLConnector(cfg *config.PostgreSQLConfig) *PostgreSQLConnector {
-	return &PostgreSQLConnector{config: cfg}
+	return &PostgreSQLConnector{
+		config:   cfg,
+		queryLib: queries.NewQueryLibrary(),
+	}
 }
 
 // Connect establishes PostgreSQL connection
@@ -242,39 +270,55 @@ func (p *PostgreSQLConnector) ExecuteQuery(query string) (*QueryResult, error) {
 
 // ExecuteComplexQuery executes a complex query for stress testing
 func (p *PostgreSQLConnector) ExecuteComplexQuery() (*QueryResult, error) {
-	complexQuery := `
-		WITH test_data AS (
-			SELECT
-				generate_series(1, 1000) as id,
-				'Record ' || generate_series(1, 1000) as name,
-				random() * 100 as value,
-				NOW() - (random() * INTERVAL '365 days') as created_at
-		),
-		aggregated AS (
-			SELECT
-				id,
-				name,
-				value,
-				created_at,
-				ROW_NUMBER() OVER (ORDER BY value DESC) as rank,
-				AVG(value) OVER (PARTITION BY (id % 10)) as group_avg
-			FROM test_data
-		)
-		SELECT
-			rank,
-			name,
-			value,
-			group_avg,
-			created_at,
-			CASE
-				WHEN value > group_avg THEN 'Above Average'
-				ELSE 'Below Average'
-			END as performance
-		FROM aggregated
-		WHERE rank <= 50
-		ORDER BY rank
-	`
-	return p.ExecuteQuery(complexQuery)
+	// Get a complex query from the query library
+	query, err := p.queryLib.GetQuery(queries.DatabasePostgreSQL, queries.QueryTypeAnalytics)
+	if err != nil {
+		// Fallback to recursive query
+		query, err = p.queryLib.GetQuery(queries.DatabasePostgreSQL, queries.QueryTypeRecursive)
+		if err != nil {
+			// Final fallback to complex query
+			query, err = p.queryLib.GetQuery(queries.DatabasePostgreSQL, queries.QueryTypeComplex)
+			if err != nil {
+				// Ultimate fallback to hardcoded query
+				complexQuery := `
+					WITH test_data AS (
+						SELECT
+							generate_series(1, 1000) as id,
+							'Record ' || generate_series(1, 1000) as name,
+							random() * 100 as value,
+							NOW() - (random() * INTERVAL '365 days') as created_at
+					),
+					aggregated AS (
+						SELECT
+							id,
+							name,
+							value,
+							created_at,
+							ROW_NUMBER() OVER (ORDER BY value DESC) as rank,
+							AVG(value) OVER (PARTITION BY (id % 10)) as group_avg
+						FROM test_data
+					)
+					SELECT
+						rank,
+						name,
+						value,
+						group_avg,
+						created_at,
+						CASE
+							WHEN value > group_avg THEN 'Above Average'
+							ELSE 'Below Average'
+						END as performance
+					FROM aggregated
+					WHERE rank <= 50
+					ORDER BY rank
+				`
+				return p.ExecuteQuery(complexQuery)
+			}
+		}
+	}
+
+	log.Printf("Executing PostgreSQL complex query: %s", query.Name)
+	return p.ExecuteQuery(query.SQL)
 }
 
 // GetConnectionInfo returns PostgreSQL connection information
@@ -313,65 +357,201 @@ func (p *PostgreSQLConnector) UpdateConfig(cfg *config.PostgreSQLConfig) error {
 	return p.Connect()
 }
 
-// NewMongoDBConnector creates a new MongoDB connector (temporarily disabled)
+// NewMongoDBConnector creates a new MongoDB connector
 func NewMongoDBConnector(cfg *config.MongoDBConfig) *MongoDBConnector {
-	return &MongoDBConnector{config: cfg}
+	return &MongoDBConnector{
+		config:   cfg,
+		queryLib: queries.NewQueryLibrary(),
+	}
 }
 
-// Connect establishes MongoDB connection (temporarily disabled)
+// Connect establishes MongoDB connection
 func (m *MongoDBConnector) Connect() error {
-	return fmt.Errorf("MongoDB connector temporarily disabled")
-}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 
-// Disconnect closes MongoDB connection (temporarily disabled)
-func (m *MongoDBConnector) Disconnect() error {
+	var err error
+	m.client, err = mongo.Connect(ctx, options.Client().ApplyURI(m.config.URI))
+	if err != nil {
+		return fmt.Errorf("failed to connect to MongoDB: %v", err)
+	}
+
+	err = m.client.Ping(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to ping MongoDB: %v", err)
+	}
+
+	m.db = m.client.Database(m.config.Database)
 	return nil
 }
 
-// ExecuteQuery executes a query on MongoDB (temporarily disabled)
+// Disconnect closes MongoDB connection
+func (m *MongoDBConnector) Disconnect() error {
+	if m.client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		return m.client.Disconnect(ctx)
+	}
+	return nil
+}
+
+// ExecuteQuery executes a query on MongoDB
 func (m *MongoDBConnector) ExecuteQuery(query string) (*QueryResult, error) {
-	result := &QueryResult{
-		Error:   fmt.Errorf("MongoDB connector temporarily disabled"),
-		Success: false,
-		Message: "MongoDB connector temporarily disabled",
+	start := time.Now()
+	result := &QueryResult{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	collection := m.db.Collection("testcollection")
+
+	// Simple find operation
+	cursor, err := collection.Find(ctx, bson.M{})
+	if err != nil {
+		result.Error = err
+		result.Success = false
+		result.Duration = time.Since(start)
+		return result, err
 	}
-	return result, result.Error
+	defer cursor.Close(ctx)
+
+	var count int64 = 0
+	for cursor.Next(ctx) {
+		count++
+	}
+
+	result.Duration = time.Since(start)
+	result.RowsAffected = count
+	result.Success = true
+	result.Message = fmt.Sprintf("Query executed successfully, %d documents returned", count)
+
+	return result, nil
 }
 
-// ExecuteComplexQuery executes a complex aggregation pipeline (temporarily disabled)
+// ExecuteComplexQuery executes a complex aggregation pipeline
 func (m *MongoDBConnector) ExecuteComplexQuery() (*QueryResult, error) {
-	result := &QueryResult{
-		Error:   fmt.Errorf("MongoDB connector temporarily disabled"),
-		Success: false,
-		Message: "MongoDB connector temporarily disabled",
+	// Get a complex query from the query library
+	query, err := m.queryLib.GetQuery(queries.DatabaseMongoDB, queries.QueryTypeComplex)
+	if err != nil {
+		// Fallback to aggregation pipeline
+		return m.executeDefaultAggregation()
 	}
-	return result, result.Error
+
+	log.Printf("Executing MongoDB complex query: %s", query.Name)
+	return m.executeAggregationPipeline()
 }
 
-// GetConnectionInfo returns MongoDB connection information (temporarily disabled)
+// executeDefaultAggregation executes a default aggregation pipeline
+func (m *MongoDBConnector) executeDefaultAggregation() (*QueryResult, error) {
+	start := time.Now()
+	result := &QueryResult{}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	collection := m.db.Collection("testcollection")
+
+	// Complex aggregation pipeline
+	pipeline := []bson.M{
+		{"$addFields": bson.M{
+			"randomValue": bson.M{"$rand": bson.M{}},
+			"category":    bson.M{"$mod": []interface{}{bson.M{"$toInt": "$_id"}, 5}},
+		}},
+		{"$group": bson.M{
+			"_id":      "$category",
+			"count":    bson.M{"$sum": 1},
+			"avgValue": bson.M{"$avg": "$randomValue"},
+			"maxValue": bson.M{"$max": "$randomValue"},
+			"minValue": bson.M{"$min": "$randomValue"},
+		}},
+		{"$sort": bson.M{"_id": 1}},
+		{"$project": bson.M{
+			"category": "$_id",
+			"count":    1,
+			"avgValue": 1,
+			"maxValue": 1,
+			"minValue": 1,
+			"range":    bson.M{"$subtract": []interface{}{"$maxValue", "$minValue"}},
+			"_id":      0,
+		}},
+	}
+
+	cursor, err := collection.Aggregate(ctx, pipeline)
+	if err != nil {
+		result.Error = err
+		result.Success = false
+		result.Duration = time.Since(start)
+		return result, err
+	}
+	defer cursor.Close(ctx)
+
+	var count int64 = 0
+	for cursor.Next(ctx) {
+		count++
+	}
+
+	result.Duration = time.Since(start)
+	result.RowsAffected = count
+	result.Success = true
+	result.Message = fmt.Sprintf("Aggregation executed successfully, %d groups returned", count)
+
+	return result, nil
+}
+
+// executeAggregationPipeline executes aggregation pipeline
+func (m *MongoDBConnector) executeAggregationPipeline() (*QueryResult, error) {
+	return m.executeDefaultAggregation()
+}
+
+// GetConnectionInfo returns MongoDB connection information
 func (m *MongoDBConnector) GetConnectionInfo() string {
-	return fmt.Sprintf("MongoDB: %s/%s (disabled)", m.config.URI, m.config.Database)
+	return fmt.Sprintf("MongoDB: %s/%s", m.config.URI, m.config.Database)
 }
 
-// IsConnected checks if MongoDB is connected (temporarily disabled)
+// IsConnected checks if MongoDB is connected
 func (m *MongoDBConnector) IsConnected() bool {
-	return false
+	if m.client == nil {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return m.client.Ping(ctx, nil) == nil
 }
 
-// TestConnection tests the MongoDB connection (temporarily disabled)
+// TestConnection tests the MongoDB connection
 func (m *MongoDBConnector) TestConnection() error {
-	return fmt.Errorf("MongoDB connector temporarily disabled")
+	if m.client == nil {
+		return fmt.Errorf("database not connected")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return m.client.Ping(ctx, nil)
 }
 
-// UpdateConfig updates the MongoDB configuration (temporarily disabled)
+// UpdateConfig updates the MongoDB configuration and reconnects if necessary
 func (m *MongoDBConnector) UpdateConfig(cfg *config.MongoDBConfig) error {
+	// Disconnect existing connection
+	if m.client != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		m.client.Disconnect(ctx)
+		m.client = nil
+		m.db = nil
+	}
+
+	// Update configuration
 	m.config = cfg
-	return fmt.Errorf("MongoDB connector temporarily disabled")
+
+	// Reconnect with new configuration
+	return m.Connect()
 }
 
 // NewRedisConnector creates a new Redis connector
 func NewRedisConnector(cfg *config.RedisConfig) *RedisConnector {
-	return &RedisConnector{config: cfg}
+	return &RedisConnector{
+		config:   cfg,
+		queryLib: queries.NewQueryLibrary(),
+	}
 }
 
 // Connect establishes Redis connection
@@ -514,7 +694,10 @@ func (r *RedisConnector) UpdateConfig(cfg *config.RedisConfig) error {
 
 // NewMSSQLConnector creates a new MSSQL connector
 func NewMSSQLConnector(cfg *config.MSSQLConfig) *MSSQLConnector {
-	return &MSSQLConnector{config: cfg}
+	return &MSSQLConnector{
+		config:   cfg,
+		queryLib: queries.NewQueryLibrary(),
+	}
 }
 
 // Connect establishes MSSQL connection
@@ -569,47 +752,59 @@ func (m *MSSQLConnector) ExecuteQuery(query string) (*QueryResult, error) {
 
 // ExecuteComplexQuery executes a complex query for stress testing
 func (m *MSSQLConnector) ExecuteComplexQuery() (*QueryResult, error) {
-	complexQuery := `
-		WITH NumberSequence AS (
-			SELECT 1 as num
-			UNION ALL
-			SELECT num + 1
-			FROM NumberSequence
-			WHERE num < 1000
-		),
-		TestData AS (
-			SELECT
-				num as id,
-				'Record ' + CAST(num as VARCHAR(10)) as name,
-				RAND(CHECKSUM(NEWID())) * 100 as value,
-				DATEADD(day, -RAND(CHECKSUM(NEWID())) * 365, GETDATE()) as created_at
-			FROM NumberSequence
-		),
-		RankedData AS (
-			SELECT
-				id,
-				name,
-				value,
-				created_at,
-				ROW_NUMBER() OVER (ORDER BY value DESC) as rank,
-				AVG(value) OVER (PARTITION BY (id % 10)) as group_avg
-			FROM TestData
-		)
-		SELECT TOP 50
-			rank,
-			name,
-			value,
-			group_avg,
-			created_at,
-			CASE
-				WHEN value > group_avg THEN 'Above Average'
-				ELSE 'Below Average'
-			END as performance
-		FROM RankedData
-		ORDER BY rank
-		OPTION (MAXRECURSION 0)
-	`
-	return m.ExecuteQuery(complexQuery)
+	// Get a complex query from the query library
+	query, err := m.queryLib.GetQuery(queries.DatabaseMSSQL, queries.QueryTypeAnalytics)
+	if err != nil {
+		// Fallback to recursive query
+		query, err = m.queryLib.GetQuery(queries.DatabaseMSSQL, queries.QueryTypeRecursive)
+		if err != nil {
+			// Ultimate fallback to hardcoded query
+			complexQuery := `
+				WITH NumberSequence AS (
+					SELECT 1 as num
+					UNION ALL
+					SELECT num + 1
+					FROM NumberSequence
+					WHERE num < 1000
+				),
+				TestData AS (
+					SELECT
+						num as id,
+						'Record ' + CAST(num as VARCHAR(10)) as name,
+						RAND(CHECKSUM(NEWID())) * 100 as value,
+						DATEADD(day, -RAND(CHECKSUM(NEWID())) * 365, GETDATE()) as created_at
+					FROM NumberSequence
+				),
+				RankedData AS (
+					SELECT
+						id,
+						name,
+						value,
+						created_at,
+						ROW_NUMBER() OVER (ORDER BY value DESC) as rank,
+						AVG(value) OVER (PARTITION BY (id % 10)) as group_avg
+					FROM TestData
+				)
+				SELECT TOP 50
+					rank,
+					name,
+					value,
+					group_avg,
+					created_at,
+					CASE
+						WHEN value > group_avg THEN 'Above Average'
+						ELSE 'Below Average'
+					END as performance
+				FROM RankedData
+				ORDER BY rank
+				OPTION (MAXRECURSION 0)
+			`
+			return m.ExecuteQuery(complexQuery)
+		}
+	}
+
+	log.Printf("Executing MSSQL complex query: %s", query.Name)
+	return m.ExecuteQuery(query.SQL)
 }
 
 // GetConnectionInfo returns MSSQL connection information
