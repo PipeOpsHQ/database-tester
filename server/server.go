@@ -582,40 +582,40 @@ func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
 </head>
 <body>
     <div class="container">
-        <h1>&#x1F680; Database Stress Test Dashboard</h1>
+        <h1>Database Stress Test Dashboard</h1>
         <p style="text-align: center; color: #666; margin-bottom: 30px;">
             PipeOps TCP/UDP Port Testing Service - Multi-Database Stress Testing Platform
         </p>
 
         <div class="buttons">
-            <a href="/report" class="btn btn-primary">&#x1F4CA; View Full Report</a>
-            <a href="/live" class="btn btn-success">&#x1F534; Live Report</a>
-            <a href="/config-ui" class="btn btn-secondary">&#x2699;&#xFE0F; Configure Databases</a>
-            <a href="/api/status" class="btn btn-info">&#x1F50D; Connection Status</a>
-            <a href="/api/health" class="btn btn-warning">&#x1F49A; Health Check</a>
+            <a href="/report" class="btn btn-primary">View Full Report</a>
+            <a href="/live" class="btn btn-success">Live Report</a>
+            <a href="/config-ui" class="btn btn-secondary">Configure Databases</a>
+            <a href="/api/status" class="btn btn-info">Connection Status</a>
+            <a href="/api/health" class="btn btn-warning">Health Check</a>
         </div>
 
         <div class="config-section">
-            <h3>&#x2699;&#xFE0F; Database Configuration</h3>
+            <h3>Database Configuration</h3>
             <p>Use the <strong>Configure Databases</strong> button above to easily add and test your database credentials through the web interface.</p>
             <div class="buttons">
-                <button onclick="openConfigUI()" class="btn btn-secondary">&#x2699;&#xFE0F; Open Configuration UI</button>
-                <button onclick="viewCurrentConfig()" class="btn btn-info">&#x1F440; View Current Config</button>
+                <button onclick="openConfigUI()" class="btn btn-secondary">Open Configuration UI</button>
+                <button onclick="viewCurrentConfig()" class="btn btn-info">View Current Config</button>
             </div>
         </div>
 
         <div class="status">
-            <h3>&#x1F527; Quick Actions</h3>
+            <h3>Quick Actions</h3>
             <div class="buttons">
-                <button onclick="connectAll()" class="btn btn-success">&#x1F50C; Connect All DBs</button>
-                <button onclick="runStressTest()" class="btn btn-primary">&#x26A1; Run Stress Test</button>
-                <button onclick="checkStatus()" class="btn btn-info">&#x1F4CA; Check Status</button>
-                <button onclick="disconnectAll()" class="btn btn-warning">&#x1F50C; Disconnect All</button>
+                <button onclick="connectAll()" class="btn btn-success">Connect All DBs</button>
+                <button onclick="runStressTest()" class="btn btn-primary">Run Stress Test</button>
+                <button onclick="checkStatus()" class="btn btn-info">Check Status</button>
+                <button onclick="disconnectAll()" class="btn btn-warning">Disconnect All</button>
             </div>
         </div>
 
         <div class="endpoints">
-            <h3>&#x1F4E1; Available Endpoints</h3>
+            <h3>Available Endpoints</h3>
             <div class="endpoint">GET  / - Dashboard (this page)</div>
             <div class="endpoint">GET  /config-ui - Database configuration interface</div>
             <div class="endpoint">GET  /report - Full HTML report</div>
@@ -793,15 +793,15 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
 <body>
     <div class="container">
         <div class="header">
-            <h1>&#x2699;&#xFE0F; Database Configuration</h1>
+            <h1>Database Configuration</h1>
             <div class="subtitle">Configure and test your database connections</div>
         </div>
 
         <div class="nav-buttons">
-            <a href="/" class="btn btn-secondary">&#x1F3E0; Dashboard</a>
-            <button onclick="loadCurrentConfig()" class="btn btn-primary">&#x1F504; Reload Config</button>
-            <button onclick="saveAllConfigs()" class="btn btn-success">&#x1F4BE; Save All</button>
-            <button onclick="testAllConnections()" class="btn btn-warning">&#x1F50D; Test All</button>
+            <a href="/" class="btn btn-secondary">Dashboard</a>
+            <button onclick="loadCurrentConfig()" class="btn btn-primary">Reload Config</button>
+            <button onclick="saveAllConfigs()" class="btn btn-success">Save All</button>
+            <button onclick="testAllConnections()" class="btn btn-warning">Test All</button>
         </div>
 
         <div id="message-container"></div>
@@ -815,7 +815,7 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
             <div class="database-card mysql">
                 <div class="card-header">
                     <div class="card-title collapsible" onclick="toggleCard('mysql')">
-                        &#x1F5C4;&#xFE0F; MySQL Database
+                        MySQL Database
                     </div>
                     <div class="status-indicator status-unknown" id="mysql-status">Unknown</div>
                 </div>
@@ -847,8 +847,8 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                         </div>
                     </form>
                     <div class="card-actions">
-                        <button onclick="testConnection('mysql')" class="btn btn-warning btn-small">&#x1F50D; Test Connection</button>
-                        <button onclick="saveConfig('mysql')" class="btn btn-success btn-small">&#x1F4BE; Save Config</button>
+                        <button onclick="testConnection('mysql')" class="btn btn-warning btn-small">Test Connection</button>
+                        <button onclick="saveConfig('mysql')" class="btn btn-success btn-small">Save Config</button>
                     </div>
                 </div>
             </div>
@@ -857,7 +857,7 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
             <div class="database-card postgresql">
                 <div class="card-header">
                     <div class="card-title collapsible" onclick="toggleCard('postgresql')">
-                        &#x1F418; PostgreSQL Database
+                        PostgreSQL Database
                     </div>
                     <div class="status-indicator status-unknown" id="postgresql-status">Unknown</div>
                 </div>
@@ -899,8 +899,8 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                         </div>
                     </form>
                     <div class="card-actions">
-                        <button onclick="testConnection('postgresql')" class="btn btn-warning btn-small">&#x1F50D; Test Connection</button>
-                        <button onclick="saveConfig('postgresql')" class="btn btn-success btn-small">&#x1F4BE; Save Config</button>
+                        <button onclick="testConnection('postgresql')" class="btn btn-warning btn-small">Test Connection</button>
+                        <button onclick="saveConfig('postgresql')" class="btn btn-success btn-small">Save Config</button>
                     </div>
                 </div>
             </div>
@@ -909,7 +909,7 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
             <div class="database-card redis">
                 <div class="card-header">
                     <div class="card-title collapsible" onclick="toggleCard('redis')">
-                        &#x1F534; Redis Cache
+                        Redis Cache
                     </div>
                     <div class="status-indicator status-unknown" id="redis-status">Unknown</div>
                 </div>
@@ -937,8 +937,8 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                         </div>
                     </form>
                     <div class="card-actions">
-                        <button onclick="testConnection('redis')" class="btn btn-warning btn-small">&#x1F50D; Test Connection</button>
-                        <button onclick="saveConfig('redis')" class="btn btn-success btn-small">&#x1F4BE; Save Config</button>
+                        <button onclick="testConnection('redis')" class="btn btn-warning btn-small">Test Connection</button>
+                        <button onclick="saveConfig('redis')" class="btn btn-success btn-small">Save Config</button>
                     </div>
                 </div>
             </div>
@@ -947,7 +947,7 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
             <div class="database-card mssql">
                 <div class="card-header">
                     <div class="card-title collapsible" onclick="toggleCard('mssql')">
-                        &#x1F3E2; Microsoft SQL Server
+                        Microsoft SQL Server
                     </div>
                     <div class="status-indicator status-unknown" id="mssql-status">Unknown</div>
                 </div>
@@ -979,8 +979,8 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                         </div>
                     </form>
                     <div class="card-actions">
-                        <button onclick="testConnection('mssql')" class="btn btn-warning btn-small">&#x1F50D; Test Connection</button>
-                        <button onclick="saveConfig('mssql')" class="btn btn-success btn-small">&#x1F4BE; Save Config</button>
+                        <button onclick="testConnection('mssql')" class="btn btn-warning btn-small">Test Connection</button>
+                        <button onclick="saveConfig('mssql')" class="btn btn-success btn-small">Save Config</button>
                     </div>
                 </div>
             </div>
@@ -989,7 +989,7 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
             <div class="database-card mongodb">
                 <div class="card-header">
                     <div class="card-title collapsible" onclick="toggleCard('mongodb')">
-                        &#x1F343; MongoDB Database
+                        MongoDB Database
                     </div>
                     <div class="status-indicator status-unknown" id="mongodb-status">Unknown</div>
                 </div>
@@ -1005,19 +1005,19 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                         </div>
                     </form>
                     <div class="card-actions">
-                        <button onclick="testConnection('mongodb')" class="btn btn-warning btn-small">&#x1F50D; Test Connection</button>
-                        <button onclick="saveConfig('mongodb')" class="btn btn-success btn-small">&#x1F4BE; Save Config</button>
+                        <button onclick="testConnection('mongodb')" class="btn btn-warning btn-small">Test Connection</button>
+                        <button onclick="saveConfig('mongodb')" class="btn btn-success btn-small">Save Config</button>
                     </div>
                 </div>
             </div>
         </div>
 
         <div class="global-actions">
-            <h3>&#x1F3AF; Quick Actions</h3>
+            <h3>Quick Actions</h3>
             <div class="nav-buttons" style="margin-top: 15px;">
-                <button onclick="connectAllDatabases()" class="btn btn-success">&#x1F50C; Connect All</button>
-                <button onclick="runStressTest()" class="btn btn-primary">&#x26A1; Run Stress Test</button>
-                <button onclick="viewReport()" class="btn btn-info">&#x1F4CA; View Report</button>
+                <button onclick="connectAllDatabases()" class="btn btn-success">Connect All</button>
+                <button onclick="runStressTest()" class="btn btn-primary">Run Stress Test</button>
+                <button onclick="viewReport()" class="btn btn-info">View Report</button>
             </div>
         </div>
     </div>
@@ -1154,8 +1154,12 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
             const data = {};
 
             for (let [key, value] of formData.entries()) {
-                if (key === 'port' || key === 'db') {
+                if (key === 'db' && database === 'redis') {
+                    // Redis DB should be an integer
                     data[key] = parseInt(value) || 0;
+                } else if (key === 'port') {
+                    // All ports should be strings for consistency with Go structs
+                    data[key] = value.toString();
                 } else {
                     data[key] = value;
                 }
@@ -1461,10 +1465,10 @@ func (s *Server) reportHandler(w http.ResponseWriter, r *http.Request) {
 </head>
 <body>
     <div class="container">
-        <h1>📊 No Test Results Available</h1>
+        <h1>No Test Results Available</h1>
         <p>No stress tests have been run yet. Run a test to see the report.</p>
-        <a href="/" class="btn">🏠 Go to Dashboard</a>
-        <button onclick="runTest()" class="btn">⚡ Run Test Now</button>
+        <a href="/" class="btn">Go to Dashboard</a>
+        <button onclick="runTest()" class="btn">Run Test Now</button>
     </div>
     <script>
         async function runTest() {
@@ -1523,15 +1527,15 @@ func (s *Server) liveReportHandler(w http.ResponseWriter, r *http.Request) {
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔴 Live Database Stress Test Report</h1>
+            <h1>Live Database Stress Test Report</h1>
             <div id="last-updated">Loading...</div>
         </div>
 
         <div class="controls">
-            <button onclick="refreshNow()" class="btn btn-primary">🔄 Refresh Now</button>
-            <button onclick="runNewTest()" class="btn btn-success">⚡ Run New Test</button>
+            <button onclick="refreshNow()" class="btn btn-primary">Refresh Now</button>
+            <button onclick="runNewTest()" class="btn btn-success">Run New Test</button>
             <span id="auto-refresh-status">Auto-refresh: ON</span>
-            <button onclick="toggleAutoRefresh()" class="btn btn-secondary" id="toggle-btn">⏸️ Pause</button>
+            <button onclick="toggleAutoRefresh()" class="btn btn-secondary" id="toggle-btn">Pause</button>
         </div>
 
         <div id="status" class="status">Ready</div>
@@ -1588,11 +1592,11 @@ func (s *Server) liveReportHandler(w http.ResponseWriter, r *http.Request) {
             const status = document.getElementById('auto-refresh-status');
 
             if (autoRefresh) {
-                btn.textContent = '⏸️ Pause';
+                btn.textContent = 'Pause';
                 status.textContent = 'Auto-refresh: ON';
                 startAutoRefresh();
             } else {
-                btn.textContent = '▶️ Resume';
+                btn.textContent = 'Resume';
                 status.textContent = 'Auto-refresh: OFF';
                 if (refreshInterval) clearInterval(refreshInterval);
             }
