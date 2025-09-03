@@ -215,6 +215,14 @@ func (s *Server) disconnectHandler(w http.ResponseWriter, r *http.Request) {
 func (s *Server) runStressTestHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
+	// Ensure we always return JSON, even in case of panics
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Panic in runStressTestHandler: %v", r)
+			s.writeJSONError(w, http.StatusInternalServerError, "Internal server error occurred", "panic")
+		}
+	}()
+
 	// Parse test configuration from request
 	testConfig := s.parseTestConfig(r)
 
@@ -249,6 +257,14 @@ func (s *Server) runStressTestHandler(w http.ResponseWriter, r *http.Request) {
 // runSingleTestHandler runs stress test on a specific database
 func (s *Server) runSingleTestHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
+
+	// Ensure we always return JSON, even in case of panics
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Panic in runSingleTestHandler: %v", r)
+			s.writeJSONError(w, http.StatusInternalServerError, "Internal server error occurred", "panic")
+		}
+	}()
 
 	vars := mux.Vars(r)
 	dbName := vars["database"]
@@ -718,7 +734,13 @@ func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ duration: 30, concurrency: 5, query_type: 'simple' })
                 });
-                const data = await response.json();
+                let data;
+                const contentType = (response.headers.get('content-type') || '').toLowerCase();
+                if (contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    data = await response.text();
+                }
                 updateStatus('Simple test completed - view report for details');
             } catch (error) {
                 updateStatus('Error: ' + error.message);
@@ -733,7 +755,13 @@ func (s *Server) dashboardHandler(w http.ResponseWriter, r *http.Request) {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ duration: 120, concurrency: 20, query_type: 'heavy_read' })
                 });
-                const data = await response.json();
+                let data;
+                const contentType = (response.headers.get('content-type') || '').toLowerCase();
+                if (contentType.includes('application/json')) {
+                    data = await response.json();
+                } else {
+                    data = await response.text();
+                }
                 updateStatus('Heavy test completed - view report for details');
             } catch (error) {
                 updateStatus('Error: ' + error.message);
