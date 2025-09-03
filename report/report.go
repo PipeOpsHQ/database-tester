@@ -196,10 +196,11 @@ const htmlTemplate = `
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: 'Courier New', monospace;
             line-height: 1.6;
-            color: #333;
-            background-color: #f5f5f5;
+            color: #00ff00;
+            background-color: #000;
+            padding: 20px;
         }
 
         .container {
@@ -229,127 +230,124 @@ const htmlTemplate = `
 
         .summary-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
         }
 
         .summary-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-            border-left: 4px solid #667eea;
+            background: #111;
+            padding: 15px;
+            border: 1px solid #333;
+            text-align: left;
         }
 
         .summary-card h3 {
-            font-size: 1.1em;
-            color: #666;
-            margin-bottom: 10px;
+            color: #888;
+            font-size: 0.8em;
+            margin-bottom: 5px;
+            text-transform: uppercase;
         }
 
         .summary-card .value {
-            font-size: 2em;
-            font-weight: bold;
-            color: #333;
+            color: #0ff;
+            font-size: 1.5em;
+            font-weight: normal;
         }
 
         .summary-card .unit {
-            font-size: 0.9em;
+            font-size: 0.6em;
             color: #666;
-            margin-left: 5px;
         }
 
         .section {
-            background: white;
-            margin-bottom: 30px;
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+            background: #000;
+            border: 1px solid #333;
+            margin-bottom: 20px;
         }
 
         .section-header {
-            background: #f8f9fa;
-            padding: 20px;
-            border-bottom: 1px solid #e9ecef;
+            background: #111;
+            color: #00ff00;
+            padding: 10px;
+            border-bottom: 1px solid #333;
         }
 
         .section-header h2 {
-            color: #333;
-            font-size: 1.5em;
+            font-size: 1.2em;
+            text-transform: uppercase;
         }
 
         .section-content {
-            padding: 20px;
+            padding: 15px;
         }
 
         .database-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 20px;
+            grid-template-columns: 1fr;
+            gap: 15px;
         }
 
         .database-card {
-            border: 1px solid #e9ecef;
-            border-radius: 8px;
-            padding: 20px;
-            background: #fafafa;
+            background: #111;
+            padding: 15px;
+            border: 1px solid #333;
         }
 
         .database-card h3 {
-            color: #333;
-            margin-bottom: 15px;
+            color: #0ff;
+            margin-bottom: 10px;
             display: flex;
-            align-items: center;
             justify-content: space-between;
+            align-items: center;
+            text-transform: uppercase;
+            font-size: 1em;
         }
 
         .status-badge {
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 0.85em;
-            font-weight: bold;
+            padding: 2px 6px;
+            border: 1px solid;
+            font-size: 0.8em;
+            text-transform: uppercase;
         }
 
         .status-connected {
-            background: #d4edda;
-            color: #155724;
+            border-color: #00ff00;
+            color: #00ff00;
         }
 
         .status-disconnected {
-            background: #f8d7da;
-            color: #721c24;
+            border-color: #ff0000;
+            color: #ff0000;
         }
 
         .status-unknown {
-            background: #fff3cd;
-            color: #856404;
+            border-color: #ffff00;
+            color: #ffff00;
         }
 
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 15px;
-            margin: 15px 0;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 5px;
+            margin-top: 10px;
         }
 
         .metric {
-            text-align: center;
-            padding: 10px;
-            background: white;
-            border-radius: 6px;
-            border: 1px solid #e9ecef;
+            padding: 5px;
+            border-left: 2px solid #333;
+            padding-left: 10px;
         }
 
         .metric-label {
-            font-size: 0.85em;
-            color: #666;
-            margin-bottom: 5px;
+            font-size: 0.8em;
+            color: #888;
+            margin-bottom: 2px;
         }
 
         .metric-value {
-            font-weight: bold;
-            font-size: 1.1em;
+            font-size: 1em;
+            color: #0ff;
         }
 
         .perf-excellent { color: #28a745; }
@@ -438,6 +436,19 @@ const htmlTemplate = `
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
         }
 
+        .summary-text {
+            background: #000;
+            border: 1px solid #333;
+            padding: 20px;
+            margin: 20px 0;
+            color: #0ff;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.4;
+            white-space: pre;
+            overflow-x: auto;
+        }
+
         @media (max-width: 768px) {
             .summary-grid {
                 grid-template-columns: 1fr;
@@ -456,9 +467,26 @@ const htmlTemplate = `
 <body>
     <div class="container">
         <div class="header">
-            <h1>Database Stress Test Report</h1>
-            <div class="subtitle">Generated on {{.GeneratedAt.Format "January 2, 2006 at 3:04 PM MST"}}</div>
+            <h1>DATABASE STRESS TEST REPORT</h1>
+            <div class="subtitle">Generated: {{.GeneratedAt.Format "2006-01-02 15:04:05 MST"}}</div>
         </div>
+
+        <pre class="summary-text">
+================================================================================
+QUICK SUMMARY
+================================================================================
+Test Duration:    {{if .TestResults}}{{range $db, $result := .TestResults}}{{if eq $db $.Summary.FastestDatabase}}{{.TotalDuration}}{{end}}{{end}}{{else}}N/A{{end}}
+Total Databases:  {{.Summary.TotalDatabases}} ({{.Summary.ConnectedDatabases}} connected)
+Total Operations: {{.Summary.TotalOperations}}
+Success Rate:     {{printf "%.1f" (sub 100 .Summary.OverallErrorRate)}}%
+Avg Ops/Second:   {{printf "%.1f" .Summary.AverageOpsPerSec}}
+
+BEST PERFORMERS:
+• Fastest:        {{if .Summary.FastestDatabase}}{{.Summary.FastestDatabase}}{{else}}N/A{{end}}
+• Most Reliable:  {{if .Summary.MostReliable}}{{.Summary.MostReliable}}{{else}}N/A{{end}}
+• Slowest:        {{if .Summary.SlowestDatabase}}{{.Summary.SlowestDatabase}}{{else}}N/A{{end}}
+================================================================================
+        </pre>
 
         <div class="summary-grid">
             <div class="summary-card">
@@ -508,65 +536,42 @@ const htmlTemplate = `
                 <h2>Detailed Test Results</h2>
             </div>
             <div class="section-content">
-                <div class="database-grid">
-                    {{range $db, $result := .TestResults}}
-                    <div class="database-card">
-                        <h3>
-                            {{$db}}
-                            {{$status := index $.ConnectionStatus $db}}
-                            <span class="status-badge {{GetStatusClass $status}}">{{$status}}</span>
-                        </h3>
+                <pre style="color: #0ff; font-size: 12px; line-height: 1.4;">
++------------------+------------+------------+------------+------------+------------+------------+
+| DATABASE         | STATUS     | OPERATIONS | SUCCESS    | FAILED     | OPS/SEC    | ERROR %    |
++------------------+------------+------------+------------+------------+------------+------------+
+{{range $db, $result := .TestResults -}}
+| {{printf "%-16s" $db}} | {{$status := index $.ConnectionStatus $db}}{{printf "%-10s" $status}} | {{printf "%10d" $result.TotalOperations}} | {{printf "%10d" $result.SuccessfulOps}} | {{printf "%10d" $result.FailedOps}} | {{printf "%10.1f" $result.OperationsPerSec}} | {{printf "%9.1f%%" $result.ErrorRate}} |
+{{end -}}
++------------------+------------+------------+------------+------------+------------+------------+
 
-                        <div class="metrics-grid">
-                            <div class="metric">
-                                <div class="metric-label">Operations</div>
-                                <div class="metric-value">{{$result.TotalOperations}}</div>
-                            </div>
-                            <div class="metric">
-                                <div class="metric-label">Success</div>
-                                <div class="metric-value">{{$result.SuccessfulOps}}</div>
-                            </div>
-                            <div class="metric">
-                                <div class="metric-label">Failed</div>
-                                <div class="metric-value">{{$result.FailedOps}}</div>
-                            </div>
-                            <div class="metric">
-                                <div class="metric-label">Ops/Sec</div>
-                                <div class="metric-value {{GetPerformanceClass $result.OperationsPerSec}}">{{printf "%.1f" $result.OperationsPerSec}}</div>
-                            </div>
-                            <div class="metric">
-                                <div class="metric-label">Error Rate</div>
-                                <div class="metric-value {{GetErrorRateClass $result.ErrorRate}}">{{printf "%.2f" $result.ErrorRate}}%</div>
-                            </div>
-                            <div class="metric">
-                                <div class="metric-label">Duration</div>
-                                <div class="metric-value">{{FormatDuration $result.TotalDuration}}</div>
-                            </div>
-                        </div>
-
-                        <div class="latency-chart">
-                            <div class="latency-bar" style="height: {{div (mul $result.MinLatency.Nanoseconds 50) (add $result.MaxLatency.Nanoseconds 1)}}px;" title="Min: {{FormatDuration $result.MinLatency}}">Min</div>
-                            <div class="latency-bar" style="height: {{div (mul $result.AvgLatency.Nanoseconds 50) (add $result.MaxLatency.Nanoseconds 1)}}px;" title="Avg: {{FormatDuration $result.AvgLatency}}">Avg</div>
-                            <div class="latency-bar" style="height: {{div (mul $result.Percentile95.Nanoseconds 50) (add $result.MaxLatency.Nanoseconds 1)}}px;" title="P95: {{FormatDuration $result.Percentile95}}">P95</div>
-                            <div class="latency-bar" style="height: {{div (mul $result.Percentile99.Nanoseconds 50) (add $result.MaxLatency.Nanoseconds 1)}}px;" title="P99: {{FormatDuration $result.Percentile99}}">P99</div>
-                            <div class="latency-bar" style="height: 50px;" title="Max: {{FormatDuration $result.MaxLatency}}">Max</div>
-                        </div>
-
-                        {{if gt (len $result.Errors) 0}}
-                        <div class="errors-section">
-                            <h4>Errors ({{len $result.Errors}} shown):</h4>
-                            <div class="error-list">
-                                {{range $result.Errors}}
-                                <div class="error-item">{{.}}</div>
-                                {{end}}
-                            </div>
-                        </div>
-                        {{end}}
-                    </div>
-                    {{end}}
-                </div>
+LATENCY STATISTICS:
+{{range $db, $result := .TestResults}}
+{{$db}}:
+  • Average: {{FormatDuration $result.AvgLatency}}
+  • Min:     {{FormatDuration $result.MinLatency}}
+  • Max:     {{FormatDuration $result.MaxLatency}}
+  • P95:     {{FormatDuration $result.Percentile95}}
+  • P99:     {{FormatDuration $result.Percentile99}}
+{{end}}
+                </pre>
             </div>
         </div>
+
+        {{range $db, $result := .TestResults}}
+        {{if gt (len $result.Errors) 0}}
+        <div class="section">
+            <div class="section-header">
+                <h2>{{$db}} - Error Details</h2>
+            </div>
+            <div class="section-content">
+                <pre style="color: #ff6666; font-size: 12px; max-height: 200px; overflow-y: auto;">{{range $i, $err := $result.Errors}}{{if lt $i 10}}{{$err}}
+{{end}}{{end}}{{if gt (len $result.Errors) 10}}... and {{sub (len $result.Errors) 10}} more errors{{end}}</pre>
+            </div>
+        </div>
+        {{end}}
+        {{end}}
+    </div>
 
         <div class="footer">
             <p>Database Stress Test Report - PipeOps TCP/UDP Port Testing Service</p>
@@ -575,27 +580,18 @@ const htmlTemplate = `
     </div>
 
     <script>
-        // Add some interactivity
+        // Simple copy functionality for terminal output
         document.addEventListener('DOMContentLoaded', function() {
-            // Add click handlers for metrics
-            const metrics = document.querySelectorAll('.metric');
-            metrics.forEach(metric => {
-                metric.addEventListener('click', function() {
-                    this.style.transform = this.style.transform === 'scale(1.05)' ? 'scale(1)' : 'scale(1.05)';
-                    this.style.transition = 'transform 0.2s ease';
-                });
-            });
-
-            // Add hover effects for database cards
-            const cards = document.querySelectorAll('.database-card');
-            cards.forEach(card => {
-                card.addEventListener('mouseenter', function() {
-                    this.style.boxShadow = '0 4px 8px rgba(0,0,0,0.15)';
-                    this.style.transition = 'box-shadow 0.3s ease';
-                });
-
-                card.addEventListener('mouseleave', function() {
-                    this.style.boxShadow = 'none';
+            const pres = document.querySelectorAll('pre');
+            pres.forEach(pre => {
+                pre.style.cursor = 'pointer';
+                pre.title = 'Click to select all';
+                pre.addEventListener('click', function() {
+                    const selection = window.getSelection();
+                    const range = document.createRange();
+                    range.selectNodeContents(this);
+                    selection.removeAllRanges();
+                    selection.addRange(range);
                 });
             });
 

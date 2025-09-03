@@ -200,18 +200,45 @@ func (st *StressTester) runSingleDatabaseTest(dbName string, connector connector
 
 // executeHeavyReadOperation executes intensive read operations
 func (st *StressTester) executeHeavyReadOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
-	// Rotate between different heavy read patterns
-	operations := []string{
-		"SELECT u.*, COUNT(o.id) as order_count FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.id ORDER BY order_count DESC LIMIT 1000",
-		"SELECT * FROM orders WHERE order_date >= DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY total_amount DESC LIMIT 5000",
-		"SELECT DATE(created_at) as date, COUNT(*) as count, AVG(total_amount) as avg_amount FROM orders GROUP BY DATE(created_at) ORDER BY date DESC",
+	// Database-specific heavy read queries to avoid syntax or missing-table errors.
+	var operations []string
+
+	switch connector.(type) {
+	case *connectors.MySQLConnector:
+		operations = []string{
+			"SELECT u.*, COUNT(o.id) AS order_count FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.id ORDER BY order_count DESC LIMIT 1000",
+			"SELECT * FROM orders WHERE order_date >= DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY total_amount DESC LIMIT 5000",
+			"SELECT DATE(created_at) AS date, COUNT(*) AS count, AVG(total_amount) AS avg_amount FROM orders GROUP BY DATE(created_at) ORDER BY date DESC",
+		}
+	case *connectors.PostgreSQLConnector:
+		operations = []string{
+			"SELECT schemaname, tablename FROM pg_catalog.pg_tables LIMIT 1000",
+			"SELECT relname, seq_scan, idx_scan FROM pg_stat_user_tables ORDER BY seq_scan DESC LIMIT 500",
+			"SELECT datname, numbackends, xact_commit FROM pg_stat_database ORDER BY xact_commit DESC LIMIT 100",
+		}
+	case *connectors.MSSQLConnector:
+		operations = []string{
+			"SELECT TOP 1000 * FROM sys.tables",
+			"SELECT TOP 1000 name, create_date, modify_date FROM sys.objects ORDER BY modify_date DESC",
+			"SELECT TOP 1000 s.name AS schema_name, t.name AS table_name, p.rows FROM sys.tables t JOIN sys.schemas s ON t.schema_id = s.schema_id JOIN sys.partitions p ON t.object_id = p.object_id WHERE p.index_id IN (0,1) ORDER BY p.rows DESC",
+		}
+	case *connectors.MongoDBConnector:
+		// Delegate to the connector’s complex query implementation for heavy MongoDB reads.
+		return connector.ExecuteComplexQuery()
+	default:
+		operations = []string{
+			"SELECT 1",
+		}
 	}
 
-	if st.config.RandomizeQueries {
-		operation := operations[st.getRandomIndex(len(operations))]
-		return connector.ExecuteQuery(operation)
+	var query string
+	if st.config.RandomizeQueries && len(operations) > 1 {
+		query = operations[st.getRandomIndex(len(operations))]
+	} else {
+		query = operations[0]
 	}
-	return connector.ExecuteQuery(operations[0])
+
+	return connector.ExecuteQuery(query)
 }
 
 // executeHeavyWriteOperation executes intensive write operations
