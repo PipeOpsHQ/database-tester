@@ -100,7 +100,7 @@ func LoadConfig() *DatabaseConfig {
 			SSLMode:  getEnv("POSTGRES_SSLMODE", "disable"),
 		},
 		MongoDB: MongoDBConfig{
-			URI:      getEnv("MONGO_URI", "mongodb://localhost:27017"),
+			URI:      getEnv("MONGO_URI", "mongodb://root:StrongPassword123!@localhost:27017"),
 			Database: getEnv("MONGO_DATABASE", "testdb"),
 		},
 		Redis: RedisConfig{

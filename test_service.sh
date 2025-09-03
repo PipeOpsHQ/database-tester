@@ -182,6 +182,11 @@ run_tests() {
     print_test_header "Testing configuration management"
     test_config_update
     echo ""
+
+    # 9. Test MongoDB functionality
+    print_test_header "Testing MongoDB integration"
+    test_mongodb_functionality
+    echo ""
 }
 
 # Performance test
@@ -257,6 +262,42 @@ test_config_update() {
     return 0
 }
 
+# Test MongoDB functionality
+test_mongodb_functionality() {
+    print_test_header "Testing MongoDB configuration and connectivity"
+
+    # Test MongoDB configuration update
+    local mongodb_config='{"mongodb": {"uri": "mongodb://test:test@localhost:27017", "database": "testdb"}}'
+
+    local response=$(curl -s -X POST "${BASE_URL}/api/config" \
+        -H "Content-Type: application/json" \
+        -d "$mongodb_config" 2>/dev/null)
+    local curl_exit_code=$?
+
+    if [ $curl_exit_code -eq 0 ]; then
+        print_success "MongoDB configuration update - Request successful"
+    else
+        print_failure "MongoDB configuration update - Request failed"
+        return 1
+    fi
+
+    # Test MongoDB connection test endpoint
+    local test_config='{"database": "mongodb", "config": {"uri": "mongodb://localhost:27017", "database": "testdb"}}'
+
+    local test_response=$(curl -s -X POST "${BASE_URL}/api/config/test" \
+        -H "Content-Type: application/json" \
+        -d "$test_config" 2>/dev/null)
+    local test_exit_code=$?
+
+    if [ $test_exit_code -eq 0 ]; then
+        print_success "MongoDB connection test - API accessible"
+    else
+        print_failure "MongoDB connection test - API not accessible"
+    fi
+
+    return 0
+}
+
 # Service information
 show_service_info() {
     echo -e "\n${CYAN}Service Information:${NC}"
@@ -273,6 +314,7 @@ show_service_info() {
     echo -e "${WHITE}Run Test:${NC}      curl -X POST ${BASE_URL}/api/test -H 'Content-Type: application/json' -d '{\"duration\": 10, \"concurrency\": 5}'"
     echo -e "${WHITE}Config UI:${NC}     ${BASE_URL}/config-ui"
     echo -e "${WHITE}Get Config:${NC}    curl ${BASE_URL}/api/config"
+    echo -e "${WHITE}MongoDB Test:${NC}  curl -X POST ${BASE_URL}/api/config/test -d '{\"database\":\"mongodb\",\"config\":{\"uri\":\"mongodb://localhost:27017\",\"database\":\"testdb\"}}'"
 }
 
 # Main execution
@@ -331,6 +373,7 @@ case "${1:-}" in
         echo "  --info, -i     Show service information only"
         echo "  --quick, -q    Run quick tests only"
         echo "  --config, -c   Test configuration management only"
+        echo "  --mongodb, -m  Test MongoDB functionality only"
         echo ""
         echo "The script will test various endpoints and functionality of the service."
         echo "Make sure the service is running before executing this script."
@@ -351,6 +394,11 @@ case "${1:-}" in
         test_http_endpoint "/config-ui" "Configuration UI"
         test_json_endpoint "/api/config" "Configuration API"
         test_config_update
+        exit 0
+        ;;
+    --mongodb|-m)
+        check_service_status
+        test_mongodb_functionality
         exit 0
         ;;
     *)
