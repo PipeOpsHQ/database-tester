@@ -12,11 +12,21 @@ import (
 
 // TestConfig holds configuration for stress testing
 type TestConfig struct {
-	Duration        time.Duration // How long to run the test
-	Concurrency     int           // Number of concurrent operations
-	QueryType       string        // "simple" or "complex"
-	DelayBetween    time.Duration // Delay between operations
-	OperationsLimit int           // Maximum number of operations (-1 for unlimited)
+	Duration         time.Duration // How long to run the test
+	Concurrency      int           // Number of concurrent operations
+	QueryType        string        // Query pattern: "simple", "complex", "heavy_read", "heavy_write", "mixed", "transaction", "bulk", "analytics"
+	DelayBetween     time.Duration // Delay between operations
+	OperationsLimit  int           // Maximum number of operations (-1 for unlimited)
+	MixedRatio       MixedRatio    // Ratio for mixed workloads
+	BurstMode        bool          // Enable burst mode for intensive testing
+	RandomizeQueries bool          // Randomize query selection within type
+}
+
+// MixedRatio defines ratios for mixed workload testing
+type MixedRatio struct {
+	ReadPercent        int // Percentage of read operations (0-100)
+	WritePercent       int // Percentage of write operations (0-100)
+	TransactionPercent int // Percentage of transaction operations (0-100)
 }
 
 // TestResult holds the results of a stress test
@@ -66,11 +76,42 @@ func NewStressTester(conns map[string]connectors.DatabaseConnector, config *Test
 // DefaultTestConfig returns a default test configuration
 func DefaultTestConfig() *TestConfig {
 	return &TestConfig{
-		Duration:        30 * time.Second,
-		Concurrency:     10,
-		QueryType:       "simple",
-		DelayBetween:    100 * time.Millisecond,
-		OperationsLimit: -1,
+		Duration:         30 * time.Second,
+		Concurrency:      10,
+		QueryType:        "simple",
+		DelayBetween:     100 * time.Millisecond,
+		OperationsLimit:  -1,
+		MixedRatio:       MixedRatio{ReadPercent: 70, WritePercent: 25, TransactionPercent: 5},
+		BurstMode:        false,
+		RandomizeQueries: true,
+	}
+}
+
+// DefaultMixedWorkloadConfig returns a configuration optimized for mixed workloads
+func DefaultMixedWorkloadConfig() *TestConfig {
+	return &TestConfig{
+		Duration:         60 * time.Second,
+		Concurrency:      20,
+		QueryType:        "mixed",
+		DelayBetween:     50 * time.Millisecond,
+		OperationsLimit:  -1,
+		MixedRatio:       MixedRatio{ReadPercent: 60, WritePercent: 30, TransactionPercent: 10},
+		BurstMode:        true,
+		RandomizeQueries: true,
+	}
+}
+
+// DefaultHeavyLoadConfig returns a configuration for heavy load testing
+func DefaultHeavyLoadConfig() *TestConfig {
+	return &TestConfig{
+		Duration:         120 * time.Second,
+		Concurrency:      50,
+		QueryType:        "heavy_read",
+		DelayBetween:     10 * time.Millisecond,
+		OperationsLimit:  -1,
+		MixedRatio:       MixedRatio{ReadPercent: 80, WritePercent: 15, TransactionPercent: 5},
+		BurstMode:        true,
+		RandomizeQueries: true,
 	}
 }
 
@@ -157,6 +198,135 @@ func (st *StressTester) runSingleDatabaseTest(dbName string, connector connector
 	return result
 }
 
+// executeHeavyReadOperation executes intensive read operations
+func (st *StressTester) executeHeavyReadOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
+	// Rotate between different heavy read patterns
+	operations := []string{
+		"SELECT u.*, COUNT(o.id) as order_count FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.id ORDER BY order_count DESC LIMIT 1000",
+		"SELECT * FROM orders WHERE order_date >= DATE_SUB(NOW(), INTERVAL 1 YEAR) ORDER BY total_amount DESC LIMIT 5000",
+		"SELECT DATE(created_at) as date, COUNT(*) as count, AVG(total_amount) as avg_amount FROM orders GROUP BY DATE(created_at) ORDER BY date DESC",
+	}
+
+	if st.config.RandomizeQueries {
+		operation := operations[st.getRandomIndex(len(operations))]
+		return connector.ExecuteQuery(operation)
+	}
+	return connector.ExecuteQuery(operations[0])
+}
+
+// executeHeavyWriteOperation executes intensive write operations
+func (st *StressTester) executeHeavyWriteOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
+	operations := []string{
+		fmt.Sprintf("INSERT INTO users (username, email, age, created_at) VALUES ('stress_user_%d', 'stress_%d@test.com', %d, NOW())",
+			st.getRandomIndex(100000), st.getRandomIndex(100000), 20+st.getRandomIndex(50)),
+		fmt.Sprintf("UPDATE users SET last_login = NOW(), login_count = login_count + 1 WHERE id = %d", st.getRandomIndex(1000)+1),
+		fmt.Sprintf("DELETE FROM temp_data WHERE created_at < DATE_SUB(NOW(), INTERVAL %d HOUR)", st.getRandomIndex(24)+1),
+	}
+
+	if st.config.RandomizeQueries {
+		operation := operations[st.getRandomIndex(len(operations))]
+		return connector.ExecuteQuery(operation)
+	}
+	return connector.ExecuteQuery(operations[0])
+}
+
+// executeMixedOperation executes mixed read/write operations based on ratio
+func (st *StressTester) executeMixedOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
+	// Generate random number to determine operation type based on ratio
+	rand := st.getRandomIndex(100)
+
+	if rand < st.config.MixedRatio.ReadPercent {
+		return st.executeHeavyReadOperation(connector)
+	} else if rand < st.config.MixedRatio.ReadPercent+st.config.MixedRatio.WritePercent {
+		return st.executeHeavyWriteOperation(connector)
+	} else {
+		return st.executeTransactionOperation(connector)
+	}
+}
+
+// executeTransactionOperation executes transaction-based operations
+func (st *StressTester) executeTransactionOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
+	// Simulate complex transaction
+	userID := st.getRandomIndex(1000) + 1
+	amount := float64(st.getRandomIndex(50000)) / 100.0
+
+	transaction := fmt.Sprintf(`
+		START TRANSACTION;
+		INSERT INTO orders (user_id, total_amount, status, order_date) VALUES (%d, %.2f, 'pending', NOW());
+		UPDATE users SET total_spent = total_spent + %.2f WHERE id = %d;
+		INSERT INTO audit_log (user_id, action, amount, timestamp) VALUES (%d, 'order_created', %.2f, NOW());
+		COMMIT;
+	`, userID, amount, amount, userID, userID, amount)
+
+	return connector.ExecuteQuery(transaction)
+}
+
+// executeBulkOperation executes bulk insert/update operations
+func (st *StressTester) executeBulkOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
+	// Generate bulk insert
+	values := make([]string, 10)
+	for i := 0; i < 10; i++ {
+		values[i] = fmt.Sprintf("('bulk_user_%d_%d', 'bulk_%d_%d@test.com', %d, NOW())",
+			st.getRandomIndex(10000), i, st.getRandomIndex(10000), i, 20+st.getRandomIndex(50))
+	}
+
+	bulkInsert := fmt.Sprintf("INSERT INTO users (username, email, age, created_at) VALUES %s",
+		fmt.Sprintf("%s", values[0]))
+	for i := 1; i < len(values); i++ {
+		bulkInsert += ", " + values[i]
+	}
+
+	return connector.ExecuteQuery(bulkInsert)
+}
+
+// executeAnalyticsOperation executes analytics-heavy operations
+func (st *StressTester) executeAnalyticsOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
+	analytics := []string{
+		`SELECT
+			DATE(o.order_date) as date,
+			COUNT(*) as orders,
+			SUM(o.total_amount) as revenue,
+			AVG(o.total_amount) as avg_order,
+			COUNT(DISTINCT o.user_id) as customers
+		FROM orders o
+		WHERE o.order_date >= DATE_SUB(NOW(), INTERVAL 90 DAY)
+		GROUP BY DATE(o.order_date)
+		ORDER BY date DESC`,
+		`SELECT
+			u.age,
+			COUNT(*) as user_count,
+			AVG(u.total_spent) as avg_spent,
+			SUM(o.total_amount) as total_revenue
+		FROM users u
+		LEFT JOIN orders o ON u.id = o.user_id
+		GROUP BY u.age
+		HAVING user_count > 5
+		ORDER BY total_revenue DESC`,
+	}
+
+	if st.config.RandomizeQueries {
+		query := analytics[st.getRandomIndex(len(analytics))]
+		return connector.ExecuteQuery(query)
+	}
+	return connector.ExecuteQuery(analytics[0])
+}
+
+// executeConcurrentOperation executes operations designed for concurrency testing
+func (st *StressTester) executeConcurrentOperation(connector connectors.DatabaseConnector) (*connectors.QueryResult, error) {
+	counterID := st.getRandomIndex(10) + 1
+	concurrent := fmt.Sprintf(`
+		UPDATE counters SET value = value + 1, updated_at = NOW() WHERE id = %d;
+		SELECT value FROM counters WHERE id = %d;
+	`, counterID, counterID)
+
+	return connector.ExecuteQuery(concurrent)
+}
+
+// getRandomIndex returns a random index for various operations
+func (st *StressTester) getRandomIndex(max int) int {
+	return int(time.Now().UnixNano() % int64(max))
+}
+
 // worker performs database operations
 func (st *StressTester) worker(ctx context.Context, workerID int, connector connectors.DatabaseConnector, results chan<- OperationResult) {
 	operationCount := 0
@@ -200,10 +370,27 @@ func (st *StressTester) performOperation(connector connectors.DatabaseConnector)
 	var queryResult *connectors.QueryResult
 	var err error
 
-	// Execute query based on type
-	if st.config.QueryType == "complex" {
+	// Execute query based on type and workload pattern
+	switch st.config.QueryType {
+	case "simple":
+		queryResult, err = connector.ExecuteQuery("SELECT 1")
+	case "complex":
 		queryResult, err = connector.ExecuteComplexQuery()
-	} else {
+	case "heavy_read":
+		queryResult, err = st.executeHeavyReadOperation(connector)
+	case "heavy_write":
+		queryResult, err = st.executeHeavyWriteOperation(connector)
+	case "mixed":
+		queryResult, err = st.executeMixedOperation(connector)
+	case "transaction":
+		queryResult, err = st.executeTransactionOperation(connector)
+	case "bulk":
+		queryResult, err = st.executeBulkOperation(connector)
+	case "analytics":
+		queryResult, err = st.executeAnalyticsOperation(connector)
+	case "concurrent":
+		queryResult, err = st.executeConcurrentOperation(connector)
+	default:
 		queryResult, err = connector.ExecuteQuery("SELECT 1")
 	}
 

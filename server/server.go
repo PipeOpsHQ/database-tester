@@ -783,10 +783,27 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
         .collapsible-content { display: block; overflow: hidden; transition: max-height 0.3s ease-out; }
         .collapsible-content.collapsed { max-height: 0; }
 
+        .modal {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5); z-index: 1000;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .modal-content {
+            background: white; padding: 30px; border-radius: 10px; width: 90%; max-width: 600px;
+            max-height: 90vh; overflow-y: auto;
+        }
+        .modal-actions {
+            margin-top: 20px; text-align: right;
+        }
+        .modal-actions .btn { margin-left: 10px; }
+        .form-section { margin: 20px 0; padding: 15px; border: 1px solid #e0e0e0; border-radius: 5px; }
+        .form-section h4 { margin-bottom: 15px; color: #333; }
+
         @media (max-width: 768px) {
             .database-grid { grid-template-columns: 1fr; }
             .form-row { grid-template-columns: 1fr; }
             .nav-buttons { flex-direction: column; align-items: center; }
+            .modal-content { width: 95%; padding: 20px; }
         }
     </style>
 </head>
@@ -1016,8 +1033,95 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
             <h3>Quick Actions</h3>
             <div class="nav-buttons" style="margin-top: 15px;">
                 <button onclick="connectAllDatabases()" class="btn btn-success">Connect All</button>
-                <button onclick="runStressTest()" class="btn btn-primary">Run Stress Test</button>
+                <button onclick="showAdvancedTestOptions()" class="btn btn-primary">Advanced Stress Test</button>
+                <button onclick="runQuickStressTest()" class="btn btn-warning">Quick Test</button>
                 <button onclick="viewReport()" class="btn btn-info">View Report</button>
+            </div>
+        </div>
+
+        <!-- Advanced Test Configuration Modal -->
+        <div id="advanced-test-modal" class="modal" style="display: none;">
+            <div class="modal-content">
+                <h3>Advanced Stress Test Configuration</h3>
+                <form id="advanced-test-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Test Duration (seconds)</label>
+                            <input type="number" class="form-input" name="duration" value="30" min="5" max="3600">
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Concurrency Level</label>
+                            <input type="number" class="form-input" name="concurrency" value="10" min="1" max="100">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">Query Type</label>
+                            <select class="form-input" name="query_type" onchange="toggleMixedRatioOptions()">
+                                <option value="simple">Simple</option>
+                                <option value="complex">Complex</option>
+                                <option value="heavy_read">Heavy Read</option>
+                                <option value="heavy_write">Heavy Write</option>
+                                <option value="mixed">Mixed Workload</option>
+                                <option value="transaction">Transaction</option>
+                                <option value="bulk">Bulk Operations</option>
+                                <option value="analytics">Analytics</option>
+                                <option value="concurrent">Concurrent</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Delay Between Operations (ms)</label>
+                            <input type="number" class="form-input" name="delay_between" value="100" min="0" max="5000">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" name="burst_mode"> Burst Mode (No delays)
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">
+                                <input type="checkbox" name="randomize_queries" checked> Randomize Queries
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Mixed Workload Ratios -->
+                    <div id="mixed-ratio-options" class="form-section" style="display: none;">
+                        <h4>Mixed Workload Ratios</h4>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label class="form-label">Read Operations (%)</label>
+                                <input type="number" class="form-input" name="read_percent" value="70" min="0" max="100">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Write Operations (%)</label>
+                                <input type="number" class="form-input" name="write_percent" value="25" min="0" max="100">
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Transaction Operations (%)</label>
+                                <input type="number" class="form-input" name="transaction_percent" value="5" min="0" max="100">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Preset Configurations -->
+                    <div class="form-section">
+                        <h4>Preset Configurations</h4>
+                        <div class="nav-buttons">
+                            <button type="button" onclick="applyPreset('light')" class="btn btn-secondary btn-small">Light Load</button>
+                            <button type="button" onclick="applyPreset('moderate')" class="btn btn-secondary btn-small">Moderate Load</button>
+                            <button type="button" onclick="applyPreset('heavy')" class="btn btn-secondary btn-small">Heavy Load</button>
+                            <button type="button" onclick="applyPreset('extreme')" class="btn btn-secondary btn-small">Extreme Load</button>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="modal-actions">
+                    <button onclick="runAdvancedStressTest()" class="btn btn-primary">Run Test</button>
+                    <button onclick="hideAdvancedTestOptions()" class="btn btn-secondary">Cancel</button>
+                </div>
             </div>
         </div>
     </div>
@@ -1393,14 +1497,14 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
             }
         }
 
-        async function runStressTest() {
-            if (!confirm('Run a stress test on all connected databases? This may take 30 seconds or more.')) {
+        async function runQuickStressTest() {
+            if (!confirm('Run a quick stress test on all connected databases? This will take about 30 seconds.')) {
                 return;
             }
 
             try {
                 showLoading(true);
-                showMessage('Starting stress test... This may take a while.', 'info');
+                showMessage('Starting quick stress test...', 'info');
 
                 const response = await fetch('/api/test', {
                     method: 'POST',
@@ -1425,9 +1529,128 @@ func (s *Server) configUIHandler(w http.ResponseWriter, r *http.Request) {
                     const text = await response.text();
                     throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
                 }
-                showMessage('Stress test completed! View the report to see results.', 'success');
+                showMessage('Quick stress test completed! View the report to see results.', 'success');
             } catch (error) {
                 showMessage('Stress test error: ' + error.message, 'error');
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        function showAdvancedTestOptions() {
+            document.getElementById('advanced-test-modal').style.display = 'block';
+        }
+
+        function hideAdvancedTestOptions() {
+            document.getElementById('advanced-test-modal').style.display = 'none';
+        }
+
+        function toggleMixedRatioOptions() {
+            const queryType = document.querySelector('select[name="query_type"]').value;
+            const mixedOptions = document.getElementById('mixed-ratio-options');
+            mixedOptions.style.display = queryType === 'mixed' ? 'block' : 'none';
+        }
+
+        function applyPreset(preset) {
+            const form = document.getElementById('advanced-test-form');
+
+            switch(preset) {
+                case 'light':
+                    form.duration.value = 30;
+                    form.concurrency.value = 5;
+                    form.query_type.value = 'simple';
+                    form.delay_between.value = 200;
+                    form.burst_mode.checked = false;
+                    break;
+                case 'moderate':
+                    form.duration.value = 60;
+                    form.concurrency.value = 15;
+                    form.query_type.value = 'mixed';
+                    form.delay_between.value = 100;
+                    form.burst_mode.checked = false;
+                    form.read_percent.value = 70;
+                    form.write_percent.value = 25;
+                    form.transaction_percent.value = 5;
+                    break;
+                case 'heavy':
+                    form.duration.value = 120;
+                    form.concurrency.value = 30;
+                    form.query_type.value = 'heavy_read';
+                    form.delay_between.value = 50;
+                    form.burst_mode.checked = true;
+                    break;
+                case 'extreme':
+                    form.duration.value = 300;
+                    form.concurrency.value = 50;
+                    form.query_type.value = 'mixed';
+                    form.delay_between.value = 10;
+                    form.burst_mode.checked = true;
+                    form.read_percent.value = 60;
+                    form.write_percent.value = 30;
+                    form.transaction_percent.value = 10;
+                    break;
+            }
+            toggleMixedRatioOptions();
+        }
+
+        async function runAdvancedStressTest() {
+            const form = document.getElementById('advanced-test-form');
+            const formData = new FormData(form);
+
+            const config = {
+                duration: parseInt(formData.get('duration')),
+                concurrency: parseInt(formData.get('concurrency')),
+                query_type: formData.get('query_type'),
+                delay_between: parseInt(formData.get('delay_between')),
+                burst_mode: formData.get('burst_mode') === 'on',
+                randomize_queries: formData.get('randomize_queries') === 'on'
+            };
+
+            // Add mixed workload ratios if applicable
+            if (config.query_type === 'mixed') {
+                config.read_percent = parseInt(formData.get('read_percent'));
+                config.write_percent = parseInt(formData.get('write_percent'));
+                config.transaction_percent = parseInt(formData.get('transaction_percent'));
+
+                // Validate percentages sum to 100
+                const total = config.read_percent + config.write_percent + config.transaction_percent;
+                if (total !== 100) {
+                    showMessage('Mixed workload percentages must sum to 100%', 'error');
+                    return;
+                }
+            }
+
+            if (!confirm('Run advanced stress test with ' + config.concurrency + ' concurrent operations for ' + config.duration + ' seconds using ' + config.query_type + ' queries?')) {
+                return;
+            }
+
+            try {
+                hideAdvancedTestOptions();
+                showLoading(true);
+                showMessage('Starting advanced stress test (' + config.query_type + ')... This may take ' + config.duration + ' seconds or more.', 'info');
+
+                const response = await fetch('/api/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                });
+
+                let data;
+                const contentType = response.headers.get('content-type');
+
+                if (contentType && contentType.includes('application/json')) {
+                    try {
+                        data = await response.json();
+                    } catch (jsonError) {
+                        throw new Error('Invalid JSON response from server');
+                    }
+                } else {
+                    const text = await response.text();
+                    throw new Error('Server returned non-JSON response: ' + text.substring(0, 100));
+                }
+                showMessage('Advanced stress test completed! View the report to see detailed results.', 'success');
+            } catch (error) {
+                showMessage('Advanced stress test error: ' + error.message, 'error');
             } finally {
                 showLoading(false);
             }
@@ -1627,11 +1850,16 @@ func (s *Server) parseTestConfig(r *http.Request) *stresstester.TestConfig {
 	// Parse query parameters or JSON body
 	if r.Header.Get("Content-Type") == "application/json" {
 		var reqConfig struct {
-			Duration        int    `json:"duration"`
-			Concurrency     int    `json:"concurrency"`
-			QueryType       string `json:"query_type"`
-			DelayBetween    int    `json:"delay_between"`
-			OperationsLimit int    `json:"operations_limit"`
+			Duration           int    `json:"duration"`
+			Concurrency        int    `json:"concurrency"`
+			QueryType          string `json:"query_type"`
+			DelayBetween       int    `json:"delay_between"`
+			OperationsLimit    int    `json:"operations_limit"`
+			BurstMode          bool   `json:"burst_mode"`
+			RandomizeQueries   bool   `json:"randomize_queries"`
+			ReadPercent        int    `json:"read_percent"`
+			WritePercent       int    `json:"write_percent"`
+			TransactionPercent int    `json:"transaction_percent"`
 		}
 
 		if err := json.NewDecoder(r.Body).Decode(&reqConfig); err == nil {
@@ -1650,6 +1878,15 @@ func (s *Server) parseTestConfig(r *http.Request) *stresstester.TestConfig {
 			if reqConfig.OperationsLimit > 0 {
 				config.OperationsLimit = reqConfig.OperationsLimit
 			}
+			config.BurstMode = reqConfig.BurstMode
+			config.RandomizeQueries = reqConfig.RandomizeQueries
+
+			// Set mixed ratio if provided
+			if reqConfig.ReadPercent > 0 || reqConfig.WritePercent > 0 || reqConfig.TransactionPercent > 0 {
+				config.MixedRatio.ReadPercent = reqConfig.ReadPercent
+				config.MixedRatio.WritePercent = reqConfig.WritePercent
+				config.MixedRatio.TransactionPercent = reqConfig.TransactionPercent
+			}
 		}
 	} else {
 		// Parse from query parameters
@@ -1665,6 +1902,27 @@ func (s *Server) parseTestConfig(r *http.Request) *stresstester.TestConfig {
 		}
 		if queryType := r.URL.Query().Get("query_type"); queryType != "" {
 			config.QueryType = queryType
+		}
+		if burstMode := r.URL.Query().Get("burst_mode"); burstMode == "true" {
+			config.BurstMode = true
+		}
+		if randomize := r.URL.Query().Get("randomize_queries"); randomize == "true" {
+			config.RandomizeQueries = true
+		}
+		if readPercent := r.URL.Query().Get("read_percent"); readPercent != "" {
+			if rp, err := strconv.Atoi(readPercent); err == nil && rp >= 0 && rp <= 100 {
+				config.MixedRatio.ReadPercent = rp
+			}
+		}
+		if writePercent := r.URL.Query().Get("write_percent"); writePercent != "" {
+			if wp, err := strconv.Atoi(writePercent); err == nil && wp >= 0 && wp <= 100 {
+				config.MixedRatio.WritePercent = wp
+			}
+		}
+		if txnPercent := r.URL.Query().Get("transaction_percent"); txnPercent != "" {
+			if tp, err := strconv.Atoi(txnPercent); err == nil && tp >= 0 && tp <= 100 {
+				config.MixedRatio.TransactionPercent = tp
+			}
 		}
 	}
 

@@ -10,16 +10,24 @@ import (
 type QueryType string
 
 const (
-	QueryTypeSimple    QueryType = "simple"
-	QueryTypeComplex   QueryType = "complex"
-	QueryTypeRead      QueryType = "read"
-	QueryTypeWrite     QueryType = "write"
-	QueryTypeMixed     QueryType = "mixed"
-	QueryTypeAnalytics QueryType = "analytics"
-	QueryTypeOLTP      QueryType = "oltp"
-	QueryTypeJoin      QueryType = "join"
-	QueryTypeAggregate QueryType = "aggregate"
-	QueryTypeRecursive QueryType = "recursive"
+	QueryTypeSimple         QueryType = "simple"
+	QueryTypeComplex        QueryType = "complex"
+	QueryTypeRead           QueryType = "read"
+	QueryTypeWrite          QueryType = "write"
+	QueryTypeMixed          QueryType = "mixed"
+	QueryTypeAnalytics      QueryType = "analytics"
+	QueryTypeOLTP           QueryType = "oltp"
+	QueryTypeJoin           QueryType = "join"
+	QueryTypeAggregate      QueryType = "aggregate"
+	QueryTypeRecursive      QueryType = "recursive"
+	QueryTypeHeavyRead      QueryType = "heavy_read"
+	QueryTypeHeavyWrite     QueryType = "heavy_write"
+	QueryTypeBulkInsert     QueryType = "bulk_insert"
+	QueryTypeBulkUpdate     QueryType = "bulk_update"
+	QueryTypeTransaction    QueryType = "transaction"
+	QueryTypeIndexStress    QueryType = "index_stress"
+	QueryTypeConcurrent     QueryType = "concurrent"
+	QueryTypeFullTextSearch QueryType = "fulltext_search"
 )
 
 // DatabaseType represents supported database types
@@ -124,6 +132,200 @@ func (ql *QueryLibrary) initializeMySQLQueries() {
 		Expected:    "Single row with value 1",
 	})
 
+	// MSSQL-specific heavy operations
+	ql.addQuery(db, QueryTypeHeavyRead, Query{
+		Name:        "CTE Recursive Query",
+		Description: "Common Table Expression with recursive operations",
+		SQL: `WITH OrderHierarchy AS (
+			-- Anchor member
+			SELECT
+				o.id,
+				o.user_id,
+				o.total_amount,
+				o.order_date,
+				1 as level,
+				CAST(o.id AS VARCHAR(MAX)) as path
+			FROM orders o
+			WHERE o.parent_order_id IS NULL
+
+			UNION ALL
+
+			-- Recursive member
+			SELECT
+				o.id,
+				o.user_id,
+				o.total_amount,
+				o.order_date,
+				oh.level + 1,
+				oh.path + '->' + CAST(o.id AS VARCHAR(MAX))
+			FROM orders o
+			INNER JOIN OrderHierarchy oh ON o.parent_order_id = oh.id
+			WHERE oh.level < 5
+		),
+		OrderStats AS (
+			SELECT
+				level,
+				COUNT(*) as order_count,
+				SUM(total_amount) as level_revenue,
+				AVG(total_amount) as avg_order_value,
+				MIN(order_date) as earliest_order,
+				MAX(order_date) as latest_order
+			FROM OrderHierarchy
+			GROUP BY level
+		)
+		SELECT
+			os.*,
+			SUM(os.level_revenue) OVER (ORDER BY os.level) as cumulative_revenue,
+			PERCENT_RANK() OVER (ORDER BY os.order_count) as count_percentile
+		FROM OrderStats os
+		ORDER BY level`,
+		Complexity: 10,
+		Expected:   "Hierarchical order analysis with CTEs",
+	})
+
+	ql.addQuery(db, QueryTypeHeavyWrite, Query{
+		Name:        "Merge Statement Operation",
+		Description: "Complex MERGE statement for upsert operations",
+		SQL: fmt.Sprintf(`WITH SourceData AS (
+			SELECT %d as user_id, 'temp_user_%d' as username, 'temp_%d@test.com' as email, %d as age, %.2f as salary
+			UNION ALL
+			SELECT %d, 'temp_user_%d', 'temp_%d@test.com', %d, %.2f
+			UNION ALL
+			SELECT %d, 'temp_user_%d', 'temp_%d@test.com', %d, %.2f
+		)
+		MERGE users AS target
+		USING SourceData AS source ON target.id = source.user_id
+		WHEN MATCHED THEN
+			UPDATE SET
+				username = source.username,
+				email = source.email,
+				age = source.age,
+				salary = source.salary,
+				updated_at = GETDATE()
+		WHEN NOT MATCHED THEN
+			INSERT (username, email, age, salary, created_at, is_active)
+			VALUES (source.username, source.email, source.age, source.salary, GETDATE(), 1)
+		OUTPUT $action, inserted.id, inserted.username;`,
+			rand.Intn(1000), rand.Intn(10000), rand.Intn(10000), 20+rand.Intn(50), 30000+rand.Float64()*70000,
+			rand.Intn(1000), rand.Intn(10000), rand.Intn(10000), 20+rand.Intn(50), 30000+rand.Float64()*70000,
+			rand.Intn(1000), rand.Intn(10000), rand.Intn(10000), 20+rand.Intn(50), 30000+rand.Float64()*70000),
+		Complexity: 8,
+		Expected:   "MERGE operation with OUTPUT clause",
+	})
+
+	ql.addQuery(db, QueryTypeIndexStress, Query{
+		Name:        "Dynamic SQL with Hints",
+		Description: "Query with table hints and index optimization",
+		SQL: `SELECT TOP 1000
+			u.id,
+			u.username,
+			u.email,
+			COUNT(o.id) as order_count,
+			SUM(o.total_amount) as total_spent,
+			MAX(o.order_date) as last_order_date
+		FROM users u WITH (INDEX(IX_Users_Username), NOLOCK)
+		LEFT JOIN orders o WITH (INDEX(IX_Orders_UserId_Date), NOLOCK)
+			ON u.id = o.user_id
+			AND o.order_date >= DATEADD(MONTH, -6, GETDATE())
+		WHERE u.is_active = 1
+			AND u.created_at >= DATEADD(YEAR, -1, GETDATE())
+		GROUP BY u.id, u.username, u.email
+		HAVING COUNT(o.id) > 0
+		ORDER BY total_spent DESC
+		OPTION (OPTIMIZE FOR (@param1 = 1000))`,
+		Complexity: 7,
+		Expected:   "Optimized query with table hints",
+	})
+
+	// Heavy Read Queries for PostgreSQL
+	ql.addQuery(db, QueryTypeHeavyRead, Query{
+		Name:        "Complex Window Functions",
+		Description: "Advanced analytics with multiple window functions",
+		SQL: `SELECT
+			u.id,
+			u.username,
+			u.created_at,
+			COUNT(o.id) OVER (PARTITION BY u.id) as total_orders,
+			SUM(o.total_amount) OVER (PARTITION BY u.id) as lifetime_value,
+			AVG(o.total_amount) OVER (PARTITION BY u.id) as avg_order_value,
+			ROW_NUMBER() OVER (ORDER BY SUM(o.total_amount) DESC) as value_rank,
+			DENSE_RANK() OVER (ORDER BY COUNT(o.id) DESC) as order_rank,
+			LAG(o.order_date) OVER (PARTITION BY u.id ORDER BY o.order_date) as prev_order,
+			LEAD(o.order_date) OVER (PARTITION BY u.id ORDER BY o.order_date) as next_order,
+			FIRST_VALUE(o.order_date) OVER (PARTITION BY u.id ORDER BY o.order_date) as first_order,
+			LAST_VALUE(o.order_date) OVER (PARTITION BY u.id ORDER BY o.order_date
+				RANGE BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING) as last_order,
+			NTILE(10) OVER (ORDER BY SUM(o.total_amount)) as value_decile
+		FROM users u
+		LEFT JOIN orders o ON u.id = o.user_id
+		WHERE u.created_at >= NOW() - INTERVAL '1 year'
+		GROUP BY u.id, u.username, u.created_at, o.order_date, o.total_amount
+		ORDER BY lifetime_value DESC NULLS LAST`,
+		Complexity: 10,
+		Expected:   "Advanced window function analytics",
+	})
+
+	// PostgreSQL-specific heavy operations
+	ql.addQuery(db, QueryTypeHeavyWrite, Query{
+		Name:        "Bulk Insert with RETURNING",
+		Description: "Mass insert operation with returned data",
+		SQL: fmt.Sprintf(`WITH bulk_data AS (
+			INSERT INTO users (username, email, first_name, last_name, age, salary, created_at)
+			VALUES
+				('pg_user_%d_1', 'pg_%d_1@test.com', 'PG', 'User1', %d, %.2f, NOW()),
+				('pg_user_%d_2', 'pg_%d_2@test.com', 'PG', 'User2', %d, %.2f, NOW()),
+				('pg_user_%d_3', 'pg_%d_3@test.com', 'PG', 'User3', %d, %.2f, NOW()),
+				('pg_user_%d_4', 'pg_%d_4@test.com', 'PG', 'User4', %d, %.2f, NOW()),
+				('pg_user_%d_5', 'pg_%d_5@test.com', 'PG', 'User5', %d, %.2f, NOW())
+			RETURNING id, username, email, created_at
+		)
+		SELECT
+			bd.*,
+			'bulk_insert_' || extract(epoch from bd.created_at) as batch_id
+		FROM bulk_data bd`,
+			rand.Intn(100000), rand.Intn(100000), 20+rand.Intn(50), 30000+rand.Float64()*70000,
+			rand.Intn(100000), rand.Intn(100000), 20+rand.Intn(50), 30000+rand.Float64()*70000,
+			rand.Intn(100000), rand.Intn(100000), 20+rand.Intn(50), 30000+rand.Float64()*70000,
+			rand.Intn(100000), rand.Intn(100000), 20+rand.Intn(50), 30000+rand.Float64()*70000,
+			rand.Intn(100000), rand.Intn(100000), 20+rand.Intn(50), 30000+rand.Float64()*70000),
+		Complexity: 7,
+		Expected:   "Bulk insert with CTE and RETURNING clause",
+	})
+
+	// PostgreSQL JSON operations
+	ql.addQuery(db, QueryTypeComplex, Query{
+		Name:        "JSON Aggregation Query",
+		Description: "Complex JSON operations and aggregations",
+		SQL: `SELECT
+			DATE_TRUNC('day', o.order_date) as order_day,
+			COUNT(*) as total_orders,
+			JSON_AGG(
+				JSON_BUILD_OBJECT(
+					'order_id', o.id,
+					'user_id', o.user_id,
+					'total', o.total_amount,
+					'items', (
+						SELECT JSON_AGG(
+							JSON_BUILD_OBJECT(
+								'product_id', oi.product_id,
+								'quantity', oi.quantity,
+								'price', oi.unit_price
+							)
+						)
+						FROM order_items oi
+						WHERE oi.order_id = o.id
+					)
+				) ORDER BY o.total_amount DESC
+			) as orders_json,
+			JSON_OBJECT_AGG(o.status, COUNT(*)) as status_counts
+		FROM orders o
+		WHERE o.order_date >= NOW() - INTERVAL '30 days'
+		GROUP BY DATE_TRUNC('day', o.order_date)
+		ORDER BY order_day DESC`,
+		Complexity: 9,
+		Expected:   "JSON aggregated order data with nested structures",
+	})
+
 	ql.addQuery(db, QueryTypeSimple, Query{
 		Name:        "Current Time",
 		Description: "Get current database time",
@@ -201,6 +403,174 @@ func (ql *QueryLibrary) initializeMySQLQueries() {
 			rand.Intn(10000), rand.Intn(10000), 20+rand.Intn(50), 30000+rand.Float64()*70000),
 		Complexity: 3,
 		Expected:   "New user inserted successfully",
+	})
+
+	// Heavy Read Queries
+	ql.addQuery(db, QueryTypeHeavyRead, Query{
+		Name:        "Large Table Scan",
+		Description: "Full table scan with filtering - stress test for large datasets",
+		SQL: `SELECT u.*, o.total_amount, o.order_date, oi.quantity, p.product_name
+			   FROM users u
+			   LEFT JOIN orders o ON u.id = o.user_id
+			   LEFT JOIN order_items oi ON o.id = oi.order_id
+			   LEFT JOIN products p ON oi.product_id = p.id
+			   WHERE u.created_at >= DATE_SUB(NOW(), INTERVAL 1 YEAR)
+			   AND (u.age BETWEEN 25 AND 65 OR u.salary > 50000)
+			   ORDER BY u.last_login DESC, o.order_date DESC`,
+		Complexity: 9,
+		Expected:   "Large dataset with multiple joins and filtering",
+	})
+
+	ql.addQuery(db, QueryTypeHeavyRead, Query{
+		Name:        "Complex Analytics Query",
+		Description: "Resource-intensive analytical query with multiple aggregations",
+		SQL: `SELECT
+			DATE(o.order_date) as date,
+			COUNT(DISTINCT o.id) as orders,
+			COUNT(DISTINCT o.user_id) as customers,
+			SUM(o.total_amount) as revenue,
+			AVG(o.total_amount) as avg_order,
+			MIN(o.total_amount) as min_order,
+			MAX(o.total_amount) as max_order,
+			STDDEV(o.total_amount) as stddev_order,
+			COUNT(DISTINCT oi.product_id) as products_sold,
+			SUM(oi.quantity) as items_sold,
+			COUNT(CASE WHEN o.status = 'completed' THEN 1 END) as completed_orders,
+			COUNT(CASE WHEN o.status = 'cancelled' THEN 1 END) as cancelled_orders,
+			(COUNT(CASE WHEN o.status = 'completed' THEN 1 END) * 100.0 / COUNT(*)) as completion_rate
+		FROM orders o
+		JOIN order_items oi ON o.id = oi.order_id
+		WHERE o.order_date >= DATE_SUB(NOW(), INTERVAL 90 DAY)
+		GROUP BY DATE(o.order_date)
+		HAVING COUNT(*) > 10
+		ORDER BY date DESC`,
+		Complexity: 10,
+		Expected:   "Daily analytics with multiple metrics and calculations",
+	})
+
+	// Heavy Write Queries
+	ql.addQuery(db, QueryTypeBulkInsert, Query{
+		Name:        "Bulk User Insert",
+		Description: "Insert multiple users in single query - write stress test",
+		SQL: fmt.Sprintf(`INSERT INTO users (username, email, first_name, last_name, age, salary, created_at, is_active) VALUES
+			   ('bulk_user_%d_1', 'bulk_%d_1@test.com', 'Bulk', 'User1', %d, %.2f, NOW(), 1),
+			   ('bulk_user_%d_2', 'bulk_%d_2@test.com', 'Bulk', 'User2', %d, %.2f, NOW(), 1),
+			   ('bulk_user_%d_3', 'bulk_%d_3@test.com', 'Bulk', 'User3', %d, %.2f, NOW(), 1),
+			   ('bulk_user_%d_4', 'bulk_%d_4@test.com', 'Bulk', 'User4', %d, %.2f, NOW(), 1),
+			   ('bulk_user_%d_5', 'bulk_%d_5@test.com', 'Bulk', 'User5', %d, %.2f, NOW(), 1)`,
+			rand.Intn(100000), rand.Intn(100000), 20+rand.Intn(50), 30000+rand.Float64()*70000,
+			rand.Intn(100000), rand.Intn(100000), 20+rand.Intn(50), 30000+rand.Float64()*70000,
+			rand.Intn(100000), rand.Intn(100000), 20+rand.Intn(50), 30000+rand.Float64()*70000,
+			rand.Intn(100000), rand.Intn(100000), 20+rand.Intn(50), 30000+rand.Float64()*70000,
+			rand.Intn(100000), rand.Intn(100000), 20+rand.Intn(50), 30000+rand.Float64()*70000),
+		Complexity: 6,
+		Expected:   "Multiple users inserted in single transaction",
+	})
+
+	ql.addQuery(db, QueryTypeBulkUpdate, Query{
+		Name:        "Mass Price Update",
+		Description: "Update multiple records with complex calculations",
+		SQL: `UPDATE products p
+			   JOIN (
+				   SELECT product_id,
+						  AVG(oi.unit_price) as avg_price,
+						  COUNT(*) as order_count
+				   FROM order_items oi
+				   JOIN orders o ON oi.order_id = o.id
+				   WHERE o.order_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+				   GROUP BY product_id
+				   HAVING COUNT(*) > 5
+			   ) stats ON p.id = stats.product_id
+			   SET p.price = CASE
+				   WHEN stats.order_count > 50 THEN stats.avg_price * 1.1
+				   WHEN stats.order_count > 20 THEN stats.avg_price * 1.05
+				   ELSE stats.avg_price
+			   END,
+			   p.updated_at = NOW(),
+			   p.last_price_update = NOW()
+			   WHERE p.is_active = 1`,
+		Complexity: 8,
+		Expected:   "Dynamic pricing updates based on sales data",
+	})
+
+	// Transaction-based queries
+	ql.addQuery(db, QueryTypeTransaction, Query{
+		Name:        "Order Processing Transaction",
+		Description: "Complex multi-table transaction simulating order processing",
+		SQL: `START TRANSACTION;
+
+			   INSERT INTO orders (user_id, total_amount, status, order_date)
+			   VALUES (FLOOR(1 + RAND() * 1000), ROUND(50 + RAND() * 500, 2), 'pending', NOW());
+
+			   SET @order_id = LAST_INSERT_ID();
+
+			   INSERT INTO order_items (order_id, product_id, quantity, unit_price) VALUES
+			   (@order_id, FLOOR(1 + RAND() * 100), FLOOR(1 + RAND() * 5), ROUND(10 + RAND() * 90, 2)),
+			   (@order_id, FLOOR(1 + RAND() * 100), FLOOR(1 + RAND() * 3), ROUND(15 + RAND() * 85, 2));
+
+			   UPDATE products p
+			   JOIN order_items oi ON p.id = oi.product_id
+			   SET p.stock_quantity = p.stock_quantity - oi.quantity
+			   WHERE oi.order_id = @order_id AND p.stock_quantity >= oi.quantity;
+
+			   UPDATE orders SET status = 'confirmed' WHERE id = @order_id;
+
+			   COMMIT;`,
+		Complexity: 9,
+		Expected:   "Complete order processing with inventory updates",
+	})
+
+	// Index stress queries
+	ql.addQuery(db, QueryTypeIndexStress, Query{
+		Name:        "Index Performance Test",
+		Description: "Query designed to stress test database indexes",
+		SQL: `SELECT u.id, u.username, u.email,
+			   COUNT(o.id) as order_count,
+			   SUM(o.total_amount) as total_spent,
+			   MAX(o.order_date) as last_order,
+			   MIN(o.order_date) as first_order,
+			   DATEDIFF(MAX(o.order_date), MIN(o.order_date)) as customer_lifetime_days
+			   FROM users u
+			   FORCE INDEX (idx_username, idx_email)
+			   LEFT JOIN orders o FORCE INDEX (idx_user_date) ON u.id = o.user_id
+			   WHERE u.created_at BETWEEN DATE_SUB(NOW(), INTERVAL 6 MONTH) AND NOW()
+			   AND u.is_active = 1
+			   AND (u.username LIKE 'test%' OR u.email LIKE '%@test.com')
+			   GROUP BY u.id, u.username, u.email
+			   HAVING order_count > 0
+			   ORDER BY total_spent DESC, last_order DESC
+			   LIMIT 100`,
+		Complexity: 7,
+		Expected:   "Index utilization test with forced index usage",
+	})
+
+	// Mixed workload queries
+	ql.addQuery(db, QueryTypeMixed, Query{
+		Name:        "Read-Write Mixed Operation",
+		Description: "Combined read and write operations in single query",
+		SQL: `UPDATE user_stats us
+			   JOIN (
+				   SELECT u.id,
+						  COUNT(o.id) as new_order_count,
+						  COALESCE(SUM(o.total_amount), 0) as new_total_spent,
+						  COALESCE(AVG(o.total_amount), 0) as new_avg_order
+				   FROM users u
+				   LEFT JOIN orders o ON u.id = o.user_id
+				   AND o.order_date >= DATE_SUB(NOW(), INTERVAL 1 DAY)
+				   WHERE u.is_active = 1
+				   GROUP BY u.id
+			   ) calc ON us.user_id = calc.id
+			   SET us.total_orders = us.total_orders + calc.new_order_count,
+				   us.total_spent = us.total_spent + calc.new_total_spent,
+				   us.avg_order_value = CASE
+					   WHEN us.total_orders + calc.new_order_count > 0
+					   THEN (us.total_spent + calc.new_total_spent) / (us.total_orders + calc.new_order_count)
+					   ELSE 0
+				   END,
+				   us.last_updated = NOW()
+			   WHERE calc.new_order_count > 0`,
+		Complexity: 8,
+		Expected:   "User statistics update with real-time calculations",
 	})
 
 	// OLTP queries
@@ -361,6 +731,7 @@ func (ql *QueryLibrary) initializePostgreSQLQueries() {
 func (ql *QueryLibrary) initializeRedisQueries() {
 	db := DatabaseRedis
 
+	// Simple operations
 	ql.addQuery(db, QueryTypeSimple, Query{
 		Name:        "Basic GET",
 		Description: "Simple key-value retrieval",
@@ -369,6 +740,15 @@ func (ql *QueryLibrary) initializeRedisQueries() {
 		Expected:    "Key value or nil",
 	})
 
+	ql.addQuery(db, QueryTypeSimple, Query{
+		Name:        "Key Existence Check",
+		Description: "Check if key exists",
+		SQL:         "EXISTS stress-test-key-" + fmt.Sprintf("%d", rand.Intn(100)),
+		Complexity:  1,
+		Expected:    "1 if exists, 0 if not",
+	})
+
+	// Write operations
 	ql.addQuery(db, QueryTypeWrite, Query{
 		Name:        "SET with Expiry",
 		Description: "Set key with expiration",
@@ -377,12 +757,142 @@ func (ql *QueryLibrary) initializeRedisQueries() {
 		Expected:    "OK response",
 	})
 
+	ql.addQuery(db, QueryTypeWrite, Query{
+		Name:        "Hash Set Multiple",
+		Description: "Set multiple hash fields",
+		SQL: fmt.Sprintf("HMSET user:%d name 'User%d' email 'user%d@test.com' age %d score %.2f",
+			rand.Intn(10000), rand.Intn(10000), rand.Intn(10000), 20+rand.Intn(50), rand.Float64()*1000),
+		Complexity: 3,
+		Expected:   "OK response",
+	})
+
+	// Heavy read operations
+	ql.addQuery(db, QueryTypeHeavyRead, Query{
+		Name:        "Scan All Keys",
+		Description: "Scan through all keys with pattern",
+		SQL:         "SCAN 0 MATCH stress-* COUNT 1000",
+		Complexity:  7,
+		Expected:    "Cursor and key list",
+	})
+
+	ql.addQuery(db, QueryTypeHeavyRead, Query{
+		Name:        "Multi-Key Retrieval",
+		Description: "Get multiple keys in single command",
+		SQL: fmt.Sprintf("MGET stress-key-%d stress-key-%d stress-key-%d stress-key-%d stress-key-%d",
+			rand.Intn(1000), rand.Intn(1000), rand.Intn(1000), rand.Intn(1000), rand.Intn(1000)),
+		Complexity: 4,
+		Expected:   "Array of values",
+	})
+
+	// Heavy write operations
+	ql.addQuery(db, QueryTypeBulkInsert, Query{
+		Name:        "List Bulk Push",
+		Description: "Push multiple items to list",
+		SQL: fmt.Sprintf("LPUSH bulk-list:%d 'item1-%d' 'item2-%d' 'item3-%d' 'item4-%d' 'item5-%d'",
+			rand.Intn(100), rand.Intn(10000), rand.Intn(10000), rand.Intn(10000), rand.Intn(10000), rand.Intn(10000)),
+		Complexity: 5,
+		Expected:   "New length of list",
+	})
+
+	ql.addQuery(db, QueryTypeBulkInsert, Query{
+		Name:        "Set Bulk Add",
+		Description: "Add multiple members to set",
+		SQL: fmt.Sprintf("SADD bulk-set:%d 'member1-%d' 'member2-%d' 'member3-%d' 'member4-%d' 'member5-%d'",
+			rand.Intn(100), rand.Intn(10000), rand.Intn(10000), rand.Intn(10000), rand.Intn(10000), rand.Intn(10000)),
+		Complexity: 5,
+		Expected:   "Number of added members",
+	})
+
+	// Index stress (sorted sets)
+	ql.addQuery(db, QueryTypeIndexStress, Query{
+		Name:        "Sorted Set Range Query",
+		Description: "Range queries on sorted sets",
+		SQL: fmt.Sprintf("ZRANGEBYSCORE leaderboard:%d %d %d WITHSCORES LIMIT 0 100",
+			rand.Intn(10), rand.Intn(1000), 500+rand.Intn(1000)),
+		Complexity: 6,
+		Expected:   "Scored members in range",
+	})
+
+	ql.addQuery(db, QueryTypeIndexStress, Query{
+		Name:        "Sorted Set Rank Operations",
+		Description: "Get rank and score operations",
+		SQL:         fmt.Sprintf("ZRANK leaderboard:%d user:%d", rand.Intn(10), rand.Intn(1000)),
+		Complexity:  4,
+		Expected:    "Member rank or nil",
+	})
+
+	// Transaction operations
+	ql.addQuery(db, QueryTypeTransaction, Query{
+		Name:        "Multi-Command Transaction",
+		Description: "Atomic multi-command transaction",
+		SQL: fmt.Sprintf("MULTI|SET txn-key:%d 'value'|INCR txn-counter:%d|EXPIRE txn-key:%d 3600|EXEC",
+			rand.Intn(1000), rand.Intn(100), rand.Intn(1000)),
+		Complexity: 7,
+		Expected:   "Transaction results array",
+	})
+
+	// Concurrent operations
+	ql.addQuery(db, QueryTypeConcurrent, Query{
+		Name:        "Atomic Counter",
+		Description: "Atomic increment operations for concurrency testing",
+		SQL:         fmt.Sprintf("INCR concurrent-counter:%d", rand.Intn(10)),
+		Complexity:  3,
+		Expected:    "Incremented value",
+	})
+
+	ql.addQuery(db, QueryTypeConcurrent, Query{
+		Name:        "List Pop Operations",
+		Description: "Blocking pop operations for queue simulation",
+		SQL:         fmt.Sprintf("LPOP work-queue:%d", rand.Intn(5)),
+		Complexity:  4,
+		Expected:    "Popped element or nil",
+	})
+
+	// Complex operations
 	ql.addQuery(db, QueryTypeComplex, Query{
 		Name:        "Pipeline Operations",
 		Description: "Multiple operations in pipeline",
 		SQL:         "PIPELINE:SET|GET|INCR|EXPIRE", // Special format for Redis pipeline
 		Complexity:  5,
 		Expected:    "Multiple operation results",
+	})
+
+	ql.addQuery(db, QueryTypeComplex, Query{
+		Name:        "Lua Script Execution",
+		Description: "Execute Lua script for complex operations",
+		SQL: fmt.Sprintf("EVAL \"local key = KEYS[1] local val = redis.call('GET', key) if val then return redis.call('INCR', key) else redis.call('SET', key, 1) return 1 end\" 1 script-counter:%d",
+			rand.Intn(100)),
+		Complexity: 8,
+		Expected:   "Script execution result",
+	})
+
+	// Analytics operations
+	ql.addQuery(db, QueryTypeAnalytics, Query{
+		Name:        "HyperLogLog Cardinality",
+		Description: "Approximate cardinality counting",
+		SQL: fmt.Sprintf("PFADD unique-visitors:%d user:%d",
+			rand.Intn(10), rand.Intn(10000)),
+		Complexity: 4,
+		Expected:   "1 if new element, 0 if exists",
+	})
+
+	ql.addQuery(db, QueryTypeAnalytics, Query{
+		Name:        "Geospatial Operations",
+		Description: "Add and query geospatial data",
+		SQL: fmt.Sprintf("GEOADD locations:%d %.6f %.6f 'point:%d'",
+			rand.Intn(10), -180+rand.Float64()*360, -90+rand.Float64()*180, rand.Intn(1000)),
+		Complexity: 5,
+		Expected:   "Number of added elements",
+	})
+
+	// Mixed workload
+	ql.addQuery(db, QueryTypeMixed, Query{
+		Name:        "Cache Simulation",
+		Description: "Simulate cache miss/hit pattern with fallback",
+		SQL: fmt.Sprintf("GET cache:user:%d|SET cache:user:%d 'computed-value-%d' EX 300",
+			rand.Intn(1000), rand.Intn(1000), rand.Intn(10000)),
+		Complexity: 6,
+		Expected:   "Cache value or set operation",
 	})
 }
 
@@ -497,6 +1007,7 @@ func (ql *QueryLibrary) initializeMSSQLQueries() {
 func (ql *QueryLibrary) initializeMongoDBQueries() {
 	db := DatabaseMongoDB
 
+	// Simple operations
 	ql.addQuery(db, QueryTypeSimple, Query{
 		Name:        "Find Documents",
 		Description: "Simple document find operation",
@@ -505,34 +1016,330 @@ func (ql *QueryLibrary) initializeMongoDBQueries() {
 		Expected:    "List of documents",
 	})
 
+	ql.addQuery(db, QueryTypeSimple, Query{
+		Name:        "Count Documents",
+		Description: "Count documents in collection",
+		SQL:         `db.testcollection.countDocuments({})`,
+		Complexity:  1,
+		Expected:    "Document count",
+	})
+
+	// Write operations
+	ql.addQuery(db, QueryTypeWrite, Query{
+		Name:        "Insert Document",
+		Description: "Insert single document with random data",
+		SQL: fmt.Sprintf(`db.testcollection.insertOne({
+			"name": "TestUser%d",
+			"email": "test%d@example.com",
+			"age": %d,
+			"score": %.2f,
+			"tags": ["tag%d", "tag%d"],
+			"createdAt": new Date(),
+			"metadata": {
+				"source": "stress_test",
+				"version": "1.0",
+				"sessionId": "%d"
+			}
+		})`,
+			rand.Intn(100000), rand.Intn(100000), 20+rand.Intn(50), rand.Float64()*1000,
+			rand.Intn(100), rand.Intn(100), rand.Intn(10000)),
+		Complexity: 3,
+		Expected:   "Insert result with ObjectId",
+	})
+
+	// Heavy read operations
+	ql.addQuery(db, QueryTypeHeavyRead, Query{
+		Name:        "Complex Find with Sorting",
+		Description: "Large result set with complex filtering and sorting",
+		SQL: `db.testcollection.find({
+			"$and": [
+				{"age": {"$gte": 18, "$lte": 65}},
+				{"score": {"$gt": 100}},
+				{"$or": [
+					{"tags": {"$in": ["premium", "gold"]}},
+					{"metadata.source": "web"}
+				]}
+			]
+		}).sort({"score": -1, "createdAt": -1}).limit(1000)`,
+		Complexity: 8,
+		Expected:   "Filtered and sorted documents",
+	})
+
+	ql.addQuery(db, QueryTypeHeavyRead, Query{
+		Name:        "Text Search Query",
+		Description: "Full-text search across multiple fields",
+		SQL: `db.testcollection.find({
+			"$text": {"$search": "user test premium"}
+		}, {
+			"score": {"$meta": "textScore"}
+		}).sort({"score": {"$meta": "textScore"}}).limit(100)`,
+		Complexity: 6,
+		Expected:   "Text search results with scores",
+	})
+
+	// Bulk operations
+	ql.addQuery(db, QueryTypeBulkInsert, Query{
+		Name:        "Bulk Insert Multiple",
+		Description: "Insert multiple documents in single operation",
+		SQL: fmt.Sprintf(`db.testcollection.insertMany([
+			{
+				"name": "BulkUser%d_1",
+				"email": "bulk%d_1@test.com",
+				"age": %d,
+				"score": %.2f,
+				"batch": "%d",
+				"createdAt": new Date()
+			},
+			{
+				"name": "BulkUser%d_2",
+				"email": "bulk%d_2@test.com",
+				"age": %d,
+				"score": %.2f,
+				"batch": "%d",
+				"createdAt": new Date()
+			},
+			{
+				"name": "BulkUser%d_3",
+				"email": "bulk%d_3@test.com",
+				"age": %d,
+				"score": %.2f,
+				"batch": "%d",
+				"createdAt": new Date()
+			}
+		])`,
+			rand.Intn(10000), rand.Intn(10000), 20+rand.Intn(50), rand.Float64()*1000, rand.Intn(1000),
+			rand.Intn(10000), rand.Intn(10000), 20+rand.Intn(50), rand.Float64()*1000, rand.Intn(1000),
+			rand.Intn(10000), rand.Intn(10000), 20+rand.Intn(50), rand.Float64()*1000, rand.Intn(1000)),
+		Complexity: 5,
+		Expected:   "Bulk insert result with multiple ObjectIds",
+	})
+
+	ql.addQuery(db, QueryTypeBulkUpdate, Query{
+		Name:        "Bulk Update Many",
+		Description: "Update multiple documents with complex operations",
+		SQL: `db.testcollection.updateMany(
+			{"score": {"$lt": 500}},
+			{
+				"$inc": {"score": 10, "updateCount": 1},
+				"$set": {"lastUpdated": new Date(), "status": "updated"},
+				"$addToSet": {"tags": "bulk_updated"}
+			}
+		)`,
+		Complexity: 6,
+		Expected:   "Update result with matched and modified counts",
+	})
+
+	// Index stress operations
+	ql.addQuery(db, QueryTypeIndexStress, Query{
+		Name:        "Compound Index Query",
+		Description: "Query utilizing compound indexes with multiple conditions",
+		SQL: `db.testcollection.find({
+			"age": {"$gte": 25, "$lte": 45},
+			"score": {"$gte": 300},
+			"tags": {"$in": ["premium", "gold", "platinum"]},
+			"createdAt": {"$gte": new Date(Date.now() - 30*24*60*60*1000)}
+		}).hint({"age": 1, "score": -1, "createdAt": -1}).limit(500)`,
+		Complexity: 7,
+		Expected:   "Documents using compound index",
+	})
+
+	// Complex aggregation operations
 	ql.addQuery(db, QueryTypeComplex, Query{
-		Name:        "Aggregation Pipeline",
-		Description: "Complex aggregation with multiple stages",
+		Name:        "Advanced Aggregation Pipeline",
+		Description: "Complex aggregation with multiple stages and lookups",
 		SQL: `db.testcollection.aggregate([
+			{"$match": {"age": {"$gte": 18}}},
 			{"$addFields": {
-				"randomValue": {"$rand": {}},
-				"category": {"$mod": [{"$toInt": "$_id"}, 5]}
+				"ageGroup": {
+					"$switch": {
+						"branches": [
+							{"case": {"$lt": ["$age", 25]}, "then": "young"},
+							{"case": {"$lt": ["$age", 45]}, "then": "adult"},
+							{"case": {"$lt": ["$age", 65]}, "then": "mature"}
+						],
+						"default": "senior"
+					}
+				},
+				"scoreCategory": {
+					"$cond": {
+						"if": {"$gte": ["$score", 800]}, "then": "high",
+						"else": {"$cond": {"if": {"$gte": ["$score", 500]}, "then": "medium", "else": "low"}}
+					}
+				}
 			}},
 			{"$group": {
-				"_id": "$category",
+				"_id": {"ageGroup": "$ageGroup", "scoreCategory": "$scoreCategory"},
 				"count": {"$sum": 1},
-				"avgValue": {"$avg": "$randomValue"},
-				"maxValue": {"$max": "$randomValue"},
-				"minValue": {"$min": "$randomValue"}
+				"avgScore": {"$avg": "$score"},
+				"maxScore": {"$max": "$score"},
+				"minScore": {"$min": "$score"},
+				"users": {"$push": {"name": "$name", "email": "$email"}}
 			}},
-			{"$sort": {"_id": 1}},
+			{"$sort": {"_id.ageGroup": 1, "_id.scoreCategory": 1}},
 			{"$project": {
-				"category": "$_id",
-				"count": 1,
-				"avgValue": 1,
-				"maxValue": 1,
-				"minValue": 1,
-				"range": {"$subtract": ["$maxValue", "$minValue"]},
+				"ageGroup": "$_id.ageGroup",
+				"scoreCategory": "$_id.scoreCategory",
+				"statistics": {
+					"count": "$count",
+					"avgScore": {"$round": ["$avgScore", 2]},
+					"maxScore": "$maxScore",
+					"minScore": "$minScore",
+					"scoreRange": {"$subtract": ["$maxScore", "$minScore"]}
+				},
+				"sampleUsers": {"$slice": ["$users", 3]},
 				"_id": 0
 			}}
 		])`,
+		Complexity: 10,
+		Expected:   "Complex aggregated user analytics",
+	})
+
+	ql.addQuery(db, QueryTypeComplex, Query{
+		Name:        "Geospatial Aggregation",
+		Description: "Geospatial queries with aggregation pipeline",
+		SQL: fmt.Sprintf(`db.locations.aggregate([
+			{"$geoNear": {
+				"near": {"type": "Point", "coordinates": [%.6f, %.6f]},
+				"distanceField": "distance",
+				"maxDistance": 10000,
+				"spherical": true
+			}},
+			{"$group": {
+				"_id": {
+					"$toInt": {"$divide": ["$distance", 1000]}
+				},
+				"count": {"$sum": 1},
+				"avgDistance": {"$avg": "$distance"},
+				"locations": {"$push": "$name"}
+			}},
+			{"$sort": {"_id": 1}},
+			{"$project": {
+				"kmRange": {"$concat": [{"$toString": "$_id"}, "-", {"$toString": {"$add": ["$_id", 1]}}, "km"]},
+				"count": 1,
+				"avgDistance": {"$round": ["$avgDistance", 2]},
+				"sampleLocations": {"$slice": ["$locations", 5]},
+				"_id": 0
+			}}
+		])`,
+			-180+rand.Float64()*360, -90+rand.Float64()*180),
+		Complexity: 9,
+		Expected:   "Geospatial distance analysis",
+	})
+
+	// Transaction simulation
+	ql.addQuery(db, QueryTypeTransaction, Query{
+		Name:        "Multi-Document Transaction",
+		Description: "Simulate multi-document ACID transaction",
+		SQL: fmt.Sprintf(`
+		session = db.getMongo().startSession();
+		session.startTransaction();
+		try {
+			db.testcollection.insertOne({
+				"name": "TxnUser%d",
+				"email": "txn%d@test.com",
+				"balance": %.2f,
+				"transactionId": "%d"
+			}, {session: session});
+
+			db.transactions.insertOne({
+				"userId": "TxnUser%d",
+				"amount": %.2f,
+				"type": "credit",
+				"timestamp": new Date(),
+				"transactionId": "%d"
+			}, {session: session});
+
+			session.commitTransaction();
+		} catch (error) {
+			session.abortTransaction();
+			throw error;
+		} finally {
+			session.endSession();
+		}`,
+			rand.Intn(10000), rand.Intn(10000), 100+rand.Float64()*900, rand.Intn(100000),
+			rand.Intn(10000), 50+rand.Float64()*200, rand.Intn(100000)),
+		Complexity: 8,
+		Expected:   "Transaction completion or rollback",
+	})
+
+	// Analytics operations
+	ql.addQuery(db, QueryTypeAnalytics, Query{
+		Name:        "Time Series Analytics",
+		Description: "Time-based analytics with date bucketing",
+		SQL: `db.testcollection.aggregate([
+			{"$match": {
+				"createdAt": {"$gte": new Date(Date.now() - 30*24*60*60*1000)}
+			}},
+			{"$group": {
+				"_id": {
+					"year": {"$year": "$createdAt"},
+					"month": {"$month": "$createdAt"},
+					"day": {"$dayOfMonth": "$createdAt"},
+					"hour": {"$hour": "$createdAt"}
+				},
+				"count": {"$sum": 1},
+				"avgScore": {"$avg": "$score"},
+				"uniqueUsers": {"$addToSet": "$name"}
+			}},
+			{"$addFields": {
+				"uniqueUserCount": {"$size": "$uniqueUsers"},
+				"date": {
+					"$dateFromParts": {
+						"year": "$_id.year",
+						"month": "$_id.month",
+						"day": "$_id.day",
+						"hour": "$_id.hour"
+					}
+				}
+			}},
+			{"$sort": {"date": -1}},
+			{"$limit": 100}
+		])`,
+		Complexity: 8,
+		Expected:   "Hourly activity analytics",
+	})
+
+	// Mixed workload
+	ql.addQuery(db, QueryTypeMixed, Query{
+		Name:        "Read-Write Mixed Operation",
+		Description: "Combined read, update, and insert operations",
+		SQL: fmt.Sprintf(`
+		var user = db.testcollection.findOne({"name": "TestUser%d"});
+		if (user) {
+			db.testcollection.updateOne(
+				{"_id": user._id},
+				{
+					"$inc": {"score": 1, "accessCount": 1},
+					"$set": {"lastAccessed": new Date()}
+				}
+			);
+		} else {
+			db.testcollection.insertOne({
+				"name": "TestUser%d",
+				"email": "newuser%d@test.com",
+				"age": %d,
+				"score": 1,
+				"accessCount": 1,
+				"createdAt": new Date(),
+				"lastAccessed": new Date()
+			});
+		}`,
+			rand.Intn(1000), rand.Intn(1000), rand.Intn(1000), 20+rand.Intn(50)),
 		Complexity: 7,
-		Expected:   "Aggregated results with statistics",
+		Expected:   "User upsert with access tracking",
+	})
+
+	// Concurrent operations
+	ql.addQuery(db, QueryTypeConcurrent, Query{
+		Name:        "Atomic Increment",
+		Description: "Atomic increment operations for concurrency testing",
+		SQL: fmt.Sprintf(`db.counters.findOneAndUpdate(
+			{"_id": "concurrent_counter_%d"},
+			{"$inc": {"value": 1}},
+			{"upsert": true, "returnDocument": "after"}
+		)`, rand.Intn(10)),
+		Complexity: 4,
+		Expected:   "Updated counter document",
 	})
 }
 
