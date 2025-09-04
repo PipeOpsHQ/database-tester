@@ -557,7 +557,7 @@ QUICK SUMMARY
 Test Duration:    {{if .TestResults}}{{range $db, $result := .TestResults}}{{if eq $db $.Summary.FastestDatabase}}{{.TotalDuration}}{{end}}{{end}}{{else}}N/A{{end}}
 Total Databases:  {{.Summary.TotalDatabases}} ({{.Summary.ConnectedDatabases}} connected)
 Total Operations: {{.Summary.TotalOperations}}
-Success Rate:     {{printf "%.1f" (sub 100 .Summary.OverallErrorRate)}}%
+Success Rate:     {{printf "%.1f" (sub 100.0 .Summary.OverallErrorRate)}}%
 Avg Ops/Second:   {{printf "%.1f" .Summary.AverageOpsPerSec}}
 
 BEST PERFORMERS:
@@ -582,7 +582,7 @@ BEST PERFORMERS:
             </div>
             <div class="summary-card">
                 <h3>Success Rate</h3>
-                <div class="value">{{printf "%.1f" (sub 100 .Summary.OverallErrorRate)}}<span class="unit">%</span></div>
+                <div class="value">{{printf "%.1f" (sub 100.0 .Summary.OverallErrorRate)}}<span class="unit">%</span></div>
             </div>
             <div class="summary-card">
                 <h3>Avg Ops/Sec</h3>
